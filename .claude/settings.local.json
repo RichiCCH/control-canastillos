@@ -1,0 +1,27 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(pkill:*)",
+      "Bash(npm run db:reset-completo:*)",
+      "Bash(npm run db:push:*)",
+      "Bash(npm run db:seed:*)",
+      "Bash(npm run dev:*)",
+      "Bash(taskkill:*)",
+      "Bash(timeout /t 2 /nobreak)",
+      "Bash(tasklist:*)",
+      "Bash(findstr:*)",
+      "Bash(npm install:*)",
+      "Bash(\"app/api/auth/[...nextauth]/route.ts\")",
+      "Bash(ls:*)",
+      "Bash(psql:*)",
+      "Bash(cat /tmp/claude/tasks/b99e18a.output)",
+      "Bash(node check-db.mjs:*)",
+      "Bash(npx tsx:*)",
+      "Bash(del check-db.ts check-db.mjs)",
+      "Bash(npm run build:*)",
+      "Bash(node check-user-role.mjs:*)",
+      "Bash(del check-user-role.mjs)",
+      "Bash(git add:*)"
+    ]
+  }
+}
