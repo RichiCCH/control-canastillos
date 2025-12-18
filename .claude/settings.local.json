@@ -21,7 +21,12 @@
       "Bash(npm run build:*)",
       "Bash(node check-user-role.mjs:*)",
       "Bash(del check-user-role.mjs)",
-      "Bash(git add:*)"
+      "Bash(git add:*)",
+      "Bash(git commit:*)",
+      "Bash(git remote add:*)",
+      "Bash(git branch:*)",
+      "Bash(git push:*)",
+      "Bash(openssl rand:*)"
     ]
   }
 }

@@ -4,6 +4,7 @@ import Link from 'next/link';
 import { usePathname } from 'next/navigation';
 import { useState } from 'react';
 import { useSession, signOut } from 'next-auth/react';
+import NotificationsBell from './notifications-bell';
 
 export default function Navigation() {
   const pathname = usePathname();
@@ -87,6 +88,9 @@ export default function Navigation() {
 
           {/* User Info & Logout */}
           <div className="hidden lg:flex items-center gap-3 flex-shrink-0">
+            {/* Campana de notificaciones */}
+            <NotificationsBell />
+
             <div className="flex items-center gap-2">
               <div className="flex items-center gap-1 text-blue-100 text-xs xl:text-sm">
                 <svg className="w-4 h-4 xl:w-5 xl:h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -131,11 +135,14 @@ export default function Navigation() {
           <div className="px-3 py-3 space-y-1.5">
             {/* User info in mobile */}
             <div className="bg-[#2563EB] text-white px-4 py-3 rounded-lg mb-2">
-              <div className="flex items-center gap-2 mb-2">
-                <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M16 7a4 4 0 11-8 0 4 4 0 018 0zM12 14a7 7 0 00-7 7h14a7 7 0 00-7-7z" />
-                </svg>
-                <span className="font-semibold">{userName}</span>
+              <div className="flex items-center justify-between gap-2 mb-2">
+                <div className="flex items-center gap-2">
+                  <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M16 7a4 4 0 11-8 0 4 4 0 018 0zM12 14a7 7 0 00-7 7h14a7 7 0 00-7-7z" />
+                  </svg>
+                  <span className="font-semibold">{userName}</span>
+                </div>
+                <NotificationsBell />
               </div>
             </div>
 
