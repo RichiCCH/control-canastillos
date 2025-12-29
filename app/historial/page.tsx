@@ -1,6 +1,8 @@
 'use client';
 
 import { useState, useEffect } from 'react';
+import { useSession } from 'next-auth/react';
+import { useRouter } from 'next/navigation';
 import Navigation from '@/components/navigation';
 
 interface Movimiento {
@@ -40,6 +42,8 @@ interface Movimiento {
 }
 
 export default function HistorialPage() {
+  const router = useRouter();
+  const { data: session, status } = useSession();
   const [movimientos, setMovimientos] = useState<Movimiento[]>([]);
   const [loading, setLoading] = useState(true);
   const [currentPage, setCurrentPage] = useState(1);
@@ -49,31 +53,23 @@ export default function HistorialPage() {
   const [filterTipo, setFilterTipo] = useState<string>('todos');
 
   useEffect(() => {
-    const userId = localStorage.getItem('selectedUserId');
-    if (userId) {
-      fetchUserAlmacen(parseInt(userId));
-    } else {
-      setLoading(false);
+    if (status === 'loading') return;
+
+    if (status === 'unauthenticated') {
+      router.push('/login');
+      return;
     }
-  }, []);
 
-  const fetchUserAlmacen = async (userId: number) => {
-    try {
-      const response = await fetch('/api/users');
-      const users = await response.json();
-      const user = users.find((u: { id: number }) => u.id === userId);
-
-      if (user && user.almacenId) {
-        setSelectedAlmacen(user.almacenId);
-        fetchMovimientos(user.almacenId);
+    if (session?.user) {
+      const almacenId = (session.user as any).almacenId;
+      if (almacenId) {
+        setSelectedAlmacen(almacenId);
+        fetchMovimientos(almacenId);
       } else {
         setLoading(false);
       }
-    } catch (error) {
-      console.error('Error al cargar usuario:', error);
-      setLoading(false);
     }
-  };
+  }, [session, status, router]);
 
   const fetchMovimientos = async (almacenId: number) => {
     setLoading(true);
