@@ -27,6 +27,7 @@ export async function GET(request: NextRequest) {
         fechaAprobacion: movimientos.fechaAprobacion,
         estado: movimientos.estado,
         observaciones: movimientos.observaciones,
+        transportadoPor: movimientos.transportadoPor,
       })
       .from(movimientos)
       .where(eq(movimientos.usuarioSolicitanteId, parseInt(usuarioId)))
@@ -78,6 +79,7 @@ export async function GET(request: NextRequest) {
           id: mov.id,
           estado: mov.estado,
           observaciones: mov.observaciones,
+          transportadoPor: mov.transportadoPor,
           fechaSolicitud: mov.fechaSolicitud,
           fechaAprobacion: mov.fechaAprobacion,
           almacenDestino: almacenDestino[0] || null,

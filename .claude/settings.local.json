@@ -26,7 +26,19 @@
       "Bash(git remote add:*)",
       "Bash(git branch:*)",
       "Bash(git push:*)",
-      "Bash(openssl rand:*)"
+      "Bash(openssl rand:*)",
+      "Bash(cat:*)",
+      "Bash(echo:*)",
+      "Bash(timeout /t 5 /nobreak)",
+      "Bash(python -c:*)",
+      "Bash(node run-migration.mjs:*)",
+      "Bash(del run-migration.mjs)",
+      "Bash(node test-rechazar.mjs:*)",
+      "Bash(dir \"c:\\\\Users\\\\RCALANIC\\\\nodejs\\\\node-v24.12.0-win-x64\\\\control-canastillos\\\\app\\\\api\\\\movimientos\\\\[id]\")",
+      "Bash(dir:*)",
+      "Bash(node check-db-enum.mjs:*)",
+      "Bash(node check-db-enum2.mjs:*)",
+      "Bash(del:*)"
     ]
   }
 }

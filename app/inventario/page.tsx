@@ -24,6 +24,7 @@ interface InventarioItem {
 export default function InventarioPage() {
   const [almacenes, setAlmacenes] = useState<Almacen[]>([]);
   const [almacenSeleccionado, setAlmacenSeleccionado] = useState<string>('');
+  const [estadoFiltro, setEstadoFiltro] = useState<string>('todos');
   const [inventario, setInventario] = useState<InventarioItem[]>([]);
   const [loading, setLoading] = useState(false);
 
@@ -61,6 +62,14 @@ export default function InventarioPage() {
   };
 
   const totalUnidades = inventario.reduce((sum, item) => sum + item.cantidad, 0);
+
+  // Filtrar inventario según el estado
+  const inventarioFiltrado = inventario.filter(item => {
+    if (estadoFiltro === 'todos') return true;
+    if (estadoFiltro === 'con_stock') return item.cantidad > 0;
+    if (estadoFiltro === 'sin_stock') return item.cantidad === 0;
+    return true;
+  });
 
   const getTipoIcon = (tipo: string) => {
     const icons: Record<string, string> = {
@@ -112,8 +121,8 @@ export default function InventarioPage() {
 
         {/* Selection Card */}
         <div className="card bg-white mb-6">
-          <div className="flex flex-col md:flex-row gap-4">
-            <div className="flex-1">
+          <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+            <div>
               <label htmlFor="almacen" className="block text-sm font-semibold text-[#64748B] mb-2">
                 Seleccionar Almacén
               </label>
@@ -132,8 +141,24 @@ export default function InventarioPage() {
               </select>
             </div>
 
+            <div>
+              <label htmlFor="estado" className="block text-sm font-semibold text-[#64748B] mb-2">
+                Estado
+              </label>
+              <select
+                id="estado"
+                value={estadoFiltro}
+                onChange={(e) => setEstadoFiltro(e.target.value)}
+                className="input-field"
+              >
+                <option value="todos">Todos los productos</option>
+                <option value="con_stock">Con stock disponible</option>
+                <option value="sin_stock">Sin stock</option>
+              </select>
+            </div>
+
             {almacenSeleccionado && almacenActual && (
-              <div className="flex-1 bg-[#F9FAFB] rounded-lg p-4">
+              <div className="bg-[#F9FAFB] rounded-lg p-4">
                 <p className="text-sm font-medium text-[#64748B] mb-1">Ubicación</p>
                 <p className="text-lg font-['Montserrat'] font-semibold text-[#1F2937]">
                   {almacenActual.ubicacion || 'Sin ubicación especificada'}
@@ -170,73 +195,38 @@ export default function InventarioPage() {
           </div>
         ) : (
           <>
-            {/* Stats Summary */}
-            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6 mb-6">
-              <div className="card bg-white">
-                <div className="flex items-center justify-between">
-                  <div>
-                    <p className="text-[#64748B] text-sm font-medium">Total Productos</p>
-                    <p className="text-3xl font-['Montserrat'] font-bold text-[#1F2937] mt-1">
-                      {inventario.length}
-                    </p>
-                  </div>
-                  <div className="bg-blue-100 rounded-full p-3">
-                    <svg className="w-8 h-8 text-[#2563EB]" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M20 7l-8-4-8 4m16 0l-8 4m8-4v10l-8 4m0-10L4 7m8 4v10M4 7v10l8 4" />
-                    </svg>
-                  </div>
-                </div>
-              </div>
-
-              <div className="card bg-white">
-                <div className="flex items-center justify-between">
-                  <div>
-                    <p className="text-[#64748B] text-sm font-medium">Total Unidades</p>
-                    <p className="text-3xl font-['Montserrat'] font-bold text-[#1F2937] mt-1">
-                      {totalUnidades}
-                    </p>
-                  </div>
-                  <div className="bg-green-100 rounded-full p-3">
-                    <svg className="w-8 h-8 text-[#10B981]" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
-                    </svg>
-                  </div>
-                </div>
-              </div>
-
-              <div className="card bg-gradient-to-br from-[#10B981] to-[#059669] text-white">
-                <p className="text-green-100 text-sm font-medium mb-1">Almacén Actual</p>
-                <p className="text-2xl font-['Montserrat'] font-bold">
-                  {almacenActual?.nombre}
-                </p>
-              </div>
-
-              <div className="card bg-gradient-to-br from-[#2563EB] to-[#1E3A8A] text-white">
-                <p className="text-blue-100 text-sm font-medium mb-1">Estado</p>
-                <p className="text-2xl font-['Montserrat'] font-bold">
-                  Activo ✓
-                </p>
-              </div>
-            </div>
-
             {/* Inventory Table */}
             <div className="card bg-white">
-              <h3 className="text-2xl font-['Montserrat'] font-bold text-[#1F2937] mb-6">
-                Productos en Stock
-              </h3>
-              <div className="overflow-x-auto">
-                <table className="w-full">
-                  <thead>
-                    <tr className="table-header border-b-2 border-[#E5E7EB]">
-                      <th className="text-left py-4 px-4">Código</th>
-                      <th className="text-left py-4 px-4">Producto</th>
-                      <th className="text-left py-4 px-4">Tipo</th>
-                      <th className="text-right py-4 px-4">Cantidad</th>
-                      <th className="text-left py-4 px-4">Unidad</th>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {inventario.map((item) => (
+              <div className="flex justify-between items-center mb-6">
+                <h3 className="text-2xl font-['Montserrat'] font-bold text-[#1F2937]">
+                  Productos en Stock
+                </h3>
+                <div className="text-sm text-[#64748B]">
+                  Mostrando <span className="font-bold text-[#1F2937]">{inventarioFiltrado.length}</span> de <span className="font-bold text-[#1F2937]">{inventario.length}</span> productos
+                </div>
+              </div>
+              {inventarioFiltrado.length === 0 ? (
+                <div className="text-center py-12">
+                  <svg className="mx-auto h-16 w-16 text-[#CBD5E1] mb-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M3 4a1 1 0 011-1h16a1 1 0 011 1v2.586a1 1 0 01-.293.707l-6.414 6.414a1 1 0 00-.293.707V17l-4 4v-6.586a1 1 0 00-.293-.707L3.293 7.293A1 1 0 013 6.586V4z" />
+                  </svg>
+                  <p className="text-[#64748B] text-lg">No hay productos que coincidan con el filtro seleccionado</p>
+                </div>
+              ) : (
+                <div className="overflow-x-auto">
+                  <table className="w-full">
+                    <thead>
+                      <tr className="table-header border-b-2 border-[#E5E7EB]">
+                        <th className="text-left py-4 px-4">Código</th>
+                        <th className="text-left py-4 px-4">Producto</th>
+                        <th className="text-left py-4 px-4">Tipo</th>
+                        <th className="text-right py-4 px-4">Cantidad</th>
+                        <th className="text-left py-4 px-4">Unidad</th>
+                        <th className="text-center py-4 px-4">Estado</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {inventarioFiltrado.map((item) => (
                       <tr key={item.id} className="border-b border-[#E5E7EB] hover:bg-[#F9FAFB] transition-colors">
                         <td className="py-4 px-4">
                           <span className="font-mono font-semibold text-[#2563EB] bg-blue-50 px-3 py-1 rounded">
@@ -261,11 +251,23 @@ export default function InventarioPage() {
                             {item.producto.unidadMedida}
                           </span>
                         </td>
+                        <td className="py-4 px-4 text-center">
+                          {item.cantidad > 0 ? (
+                            <span className="badge-success">
+                              ✓ Disponible
+                            </span>
+                          ) : (
+                            <span className="badge-error">
+                              ✗ Sin stock
+                            </span>
+                          )}
+                        </td>
                       </tr>
-                    ))}
-                  </tbody>
-                </table>
-              </div>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+              )}
             </div>
           </>
         )}

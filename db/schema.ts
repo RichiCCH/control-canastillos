@@ -13,7 +13,8 @@ export const tipoProductoEnum = pgEnum('tipo_producto', [
 export const estadoMovimientoEnum = pgEnum('estado_movimiento', [
   'pendiente',
   'aprobado',
-  'rechazado'
+  'rechazado',
+  'anulado'
 ]);
 
 // Enum para roles de usuario
@@ -75,6 +76,7 @@ export const movimientos = pgTable('movimientos', {
   usuarioAprobadorId: integer('usuario_aprobador_id').references(() => users.id),
   estado: estadoMovimientoEnum('estado').default('pendiente').notNull(),
   observaciones: text('observaciones'),
+  transportadoPor: varchar('transportado_por', { length: 255 }),
   fechaSolicitud: timestamp('fecha_solicitud').defaultNow().notNull(),
   fechaAprobacion: timestamp('fecha_aprobacion'),
   createdAt: timestamp('created_at').defaultNow().notNull(),

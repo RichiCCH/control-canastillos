@@ -1,12 +1,15 @@
 'use client';
 
 import { useState, useEffect } from 'react';
+import { useSession } from 'next-auth/react';
+import { useRouter } from 'next/navigation';
 import Navigation from '@/components/navigation';
 
 interface Movimiento {
   id: number;
   estado: string;
   observaciones: string | null;
+  transportadoPor: string | null;
   fechaSolicitud: string;
   fechaAprobacion: string | null;
   almacenDestino: {
@@ -30,26 +33,39 @@ interface Movimiento {
 }
 
 export default function MisMovimientosPage() {
+  const router = useRouter();
+  const { data: session, status } = useSession();
   const [movimientos, setMovimientos] = useState<Movimiento[]>([]);
   const [loading, setLoading] = useState(true);
   const [message, setMessage] = useState<{ type: 'success' | 'error'; text: string } | null>(null);
   const [editingMovimiento, setEditingMovimiento] = useState<number | null>(null);
-  const [editDetalles, setEditDetalles] = useState<Array<{ id: number; cantidad: number }>>([]);
+  const [editDetalles, setEditDetalles] = useState<Array<{ productoId: number; cantidad: number }>>([]);
+  const [editObservaciones, setEditObservaciones] = useState<string>('');
+  const [editTransportadoPor, setEditTransportadoPor] = useState<string>('');
+  const [processing, setProcessing] = useState<number | null>(null);
 
   useEffect(() => {
-    fetchMisMovimientos();
-  }, []);
+    if (status === 'loading') return;
+
+    if (status === 'unauthenticated') {
+      router.push('/login');
+      return;
+    }
+
+    if (session?.user?.id) {
+      fetchMisMovimientos();
+    }
+  }, [session, status, router]);
 
   const fetchMisMovimientos = async () => {
-    const userId = localStorage.getItem('selectedUserId');
-    if (!userId) {
+    if (!session?.user?.id) {
       setLoading(false);
-      setMessage({ type: 'error', text: 'Por favor selecciona un usuario' });
+      setMessage({ type: 'error', text: 'No estás autenticado' });
       return;
     }
 
     try {
-      const response = await fetch(`/api/mis-movimientos?usuarioId=${userId}`);
+      const response = await fetch(`/api/mis-movimientos?usuarioId=${session.user.id}`);
       const data = await response.json();
       setMovimientos(data);
     } catch (error) {
@@ -62,67 +78,90 @@ export default function MisMovimientosPage() {
 
   const handleEdit = (movimiento: Movimiento) => {
     setEditingMovimiento(movimiento.id);
-    setEditDetalles(movimiento.detalles.map(d => ({ id: d.id, cantidad: d.cantidad })));
+    setEditDetalles(movimiento.detalles.map(d => ({ productoId: d.producto.id, cantidad: d.cantidad })));
+    setEditObservaciones(movimiento.observaciones || '');
+    setEditTransportadoPor(movimiento.transportadoPor || '');
   };
 
   const handleCancelEdit = () => {
     setEditingMovimiento(null);
     setEditDetalles([]);
+    setEditObservaciones('');
+    setEditTransportadoPor('');
   };
 
-  const handleUpdateCantidad = (detalleId: number, nuevaCantidad: number) => {
+  const handleUpdateCantidad = (productoId: number, nuevaCantidad: number) => {
     setEditDetalles(prev =>
-      prev.map(d => d.id === detalleId ? { ...d, cantidad: nuevaCantidad } : d)
+      prev.map(d => d.productoId === productoId ? { ...d, cantidad: nuevaCantidad } : d)
     );
   };
 
-  const handleSaveEdit = async (movimientoId: number) => {
+  const handleReenviar = async (movimientoId: number) => {
     setMessage(null);
+    setProcessing(movimientoId);
 
     try {
-      const response = await fetch(`/api/movimientos/${movimientoId}`, {
-        method: 'PATCH',
+      const response = await fetch(`/api/movimientos/${movimientoId}/reenviar`, {
+        method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ detalles: editDetalles }),
+        body: JSON.stringify({
+          detalles: editDetalles,
+          observaciones: editObservaciones,
+          transportadoPor: editTransportadoPor,
+        }),
       });
 
       const data = await response.json();
 
       if (!response.ok) {
-        throw new Error(data.error || 'Error al actualizar movimiento');
+        throw new Error(data.error || 'Error al reenviar movimiento');
       }
 
-      setMessage({ type: 'success', text: 'Movimiento actualizado exitosamente' });
+      setMessage({ type: 'success', text: 'Movimiento reenviado exitosamente' });
       setEditingMovimiento(null);
       setEditDetalles([]);
+      setEditObservaciones('');
+      setEditTransportadoPor('');
       fetchMisMovimientos();
     } catch (error: unknown) {
       const errorMessage = error instanceof Error ? error.message : 'Error desconocido';
       setMessage({ type: 'error', text: errorMessage });
+    } finally {
+      setProcessing(null);
     }
   };
 
-  const handleCancelarMovimiento = async (movimientoId: number) => {
-    if (!confirm('¿Estás seguro de cancelar este movimiento? Esta acción no se puede deshacer.')) {
+  const handleAnular = async (movimientoId: number) => {
+    const observaciones = prompt('Ingresa el motivo de la anulación (opcional):');
+
+    // Si el usuario cancela el prompt, no hacer nada
+    if (observaciones === null) {
       return;
     }
 
+    setMessage(null);
+    setProcessing(movimientoId);
+
     try {
-      const response = await fetch(`/api/movimientos/${movimientoId}`, {
-        method: 'DELETE',
+      const response = await fetch(`/api/movimientos/${movimientoId}/anular`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ observaciones }),
       });
 
       const data = await response.json();
 
       if (!response.ok) {
-        throw new Error(data.error || 'Error al cancelar movimiento');
+        throw new Error(data.error || 'Error al anular movimiento');
       }
 
-      setMessage({ type: 'success', text: 'Movimiento cancelado exitosamente' });
+      setMessage({ type: 'success', text: 'Movimiento anulado exitosamente' });
       fetchMisMovimientos();
     } catch (error: unknown) {
       const errorMessage = error instanceof Error ? error.message : 'Error desconocido';
       setMessage({ type: 'error', text: errorMessage });
+    } finally {
+      setProcessing(null);
     }
   };
 
@@ -141,6 +180,7 @@ export default function MisMovimientosPage() {
       pendiente: { bg: 'bg-yellow-100', text: 'text-yellow-800', label: 'PENDIENTE' },
       aprobado: { bg: 'bg-green-100', text: 'text-green-800', label: 'APROBADO' },
       rechazado: { bg: 'bg-red-100', text: 'text-red-800', label: 'RECHAZADO' },
+      anulado: { bg: 'bg-gray-100', text: 'text-gray-800', label: 'ANULADO' },
     };
 
     const badge = badges[estado] || badges.pendiente;
@@ -158,6 +198,7 @@ export default function MisMovimientosPage() {
   const movimientosPendientes = movimientos.filter(m => m.estado === 'pendiente');
   const movimientosAprobados = movimientos.filter(m => m.estado === 'aprobado');
   const movimientosRechazados = movimientos.filter(m => m.estado === 'rechazado');
+  const movimientosAnulados = movimientos.filter(m => m.estado === 'anulado');
 
   if (loading) {
     return (
@@ -202,7 +243,7 @@ export default function MisMovimientosPage() {
         )}
 
         {/* Stats Summary */}
-        <div className="grid grid-cols-1 md:grid-cols-4 gap-6 mb-6">
+        <div className="grid grid-cols-1 md:grid-cols-3 lg:grid-cols-5 gap-6 mb-6">
           <div className="card bg-white">
             <div className="flex items-center justify-between">
               <div>
@@ -262,6 +303,22 @@ export default function MisMovimientosPage() {
               <div className="bg-red-100 rounded-full p-3">
                 <svg className="w-8 h-8 text-red-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                   <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M10 14l2-2m0 0l2-2m-2 2l-2-2m2 2l2 2m7-2a9 9 0 11-18 0 9 9 0 0118 0z" />
+                </svg>
+              </div>
+            </div>
+          </div>
+
+          <div className="card bg-white">
+            <div className="flex items-center justify-between">
+              <div>
+                <p className="text-[#64748B] text-sm font-medium">Anulados</p>
+                <p className="text-3xl font-['Montserrat'] font-bold text-gray-600 mt-1">
+                  {movimientosAnulados.length}
+                </p>
+              </div>
+              <div className="bg-gray-100 rounded-full p-3">
+                <svg className="w-8 h-8 text-gray-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M18.364 18.364A9 9 0 005.636 5.636m12.728 12.728A9 9 0 015.636 5.636m12.728 12.728L5.636 5.636" />
                 </svg>
               </div>
             </div>
@@ -326,11 +383,49 @@ export default function MisMovimientosPage() {
                       )}
                     </div>
 
-                    {mov.observaciones && (
-                      <div className="bg-[#F9FAFB] rounded-lg p-3 mb-4">
-                        <p className="text-sm font-medium text-[#64748B] mb-1">Observaciones:</p>
-                        <p className="text-sm text-[#1F2937]">{mov.observaciones}</p>
+                    {/* Observaciones and Transportado Por - Editable when editing rejected */}
+                    {editingMovimiento === mov.id && mov.estado === 'rechazado' ? (
+                      <div className="space-y-3 mb-4">
+                        <div>
+                          <label className="text-sm font-medium text-[#64748B] mb-1 block">
+                            Observaciones:
+                          </label>
+                          <textarea
+                            value={editObservaciones}
+                            onChange={(e) => setEditObservaciones(e.target.value)}
+                            className="w-full px-3 py-2 border border-[#2563EB] rounded-lg text-sm"
+                            rows={2}
+                            placeholder="Ingresa observaciones..."
+                          />
+                        </div>
+                        <div>
+                          <label className="text-sm font-medium text-[#64748B] mb-1 block">
+                            Transportado por:
+                          </label>
+                          <input
+                            type="text"
+                            value={editTransportadoPor}
+                            onChange={(e) => setEditTransportadoPor(e.target.value)}
+                            className="w-full px-3 py-2 border border-[#2563EB] rounded-lg text-sm"
+                            placeholder="Nombre del transportista..."
+                          />
+                        </div>
                       </div>
+                    ) : (
+                      <>
+                        {mov.observaciones && (
+                          <div className="bg-[#F9FAFB] rounded-lg p-3 mb-4">
+                            <p className="text-sm font-medium text-[#64748B] mb-1">Observaciones:</p>
+                            <p className="text-sm text-[#1F2937]">{mov.observaciones}</p>
+                          </div>
+                        )}
+                        {mov.transportadoPor && (
+                          <div className="bg-[#F9FAFB] rounded-lg p-3 mb-4">
+                            <p className="text-sm font-medium text-[#64748B] mb-1">Transportado por:</p>
+                            <p className="text-sm text-[#1F2937]">{mov.transportadoPor}</p>
+                          </div>
+                        )}
+                      </>
                     )}
 
                     {/* Products List */}
@@ -339,7 +434,7 @@ export default function MisMovimientosPage() {
                       <div className="space-y-2">
                         {mov.detalles.map((detalle) => {
                           const isEditing = editingMovimiento === mov.id;
-                          const editDetalle = editDetalles.find(d => d.id === detalle.id);
+                          const editDetalle = editDetalles.find(d => d.productoId === detalle.producto.id);
 
                           return (
                             <div
@@ -364,7 +459,7 @@ export default function MisMovimientosPage() {
                                   <input
                                     type="number"
                                     value={editDetalle?.cantidad || detalle.cantidad}
-                                    onChange={(e) => handleUpdateCantidad(detalle.id, parseInt(e.target.value))}
+                                    onChange={(e) => handleUpdateCantidad(detalle.producto.id, parseInt(e.target.value))}
                                     min="1"
                                     className="w-20 px-2 py-1 border border-[#2563EB] rounded text-sm font-semibold text-[#1F2937] text-center"
                                   />
@@ -387,20 +482,37 @@ export default function MisMovimientosPage() {
                   {/* Right Side - Actions */}
                   {mov.estado === 'pendiente' && (
                     <div className="lg:w-48 flex lg:flex-col gap-3">
+                      <button
+                        onClick={() => handleAnular(mov.id)}
+                        disabled={processing === mov.id}
+                        className="flex-1 bg-red-600 hover:bg-red-700 text-white px-6 py-3 rounded-lg font-medium transition-colors flex items-center justify-center gap-2 disabled:opacity-50 disabled:cursor-not-allowed"
+                      >
+                        <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M18.364 18.364A9 9 0 005.636 5.636m12.728 12.728A9 9 0 015.636 5.636m12.728 12.728L5.636 5.636" />
+                        </svg>
+                        {processing === mov.id ? 'Procesando...' : 'Anular'}
+                      </button>
+                    </div>
+                  )}
+
+                  {mov.estado === 'rechazado' && (
+                    <div className="lg:w-48 flex lg:flex-col gap-3">
                       {editingMovimiento === mov.id ? (
                         <>
                           <button
-                            onClick={() => handleSaveEdit(mov.id)}
-                            className="flex-1 btn-accent flex items-center justify-center gap-2"
+                            onClick={() => handleReenviar(mov.id)}
+                            disabled={processing === mov.id}
+                            className="flex-1 btn-accent flex items-center justify-center gap-2 disabled:opacity-50 disabled:cursor-not-allowed"
                           >
                             <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" />
+                              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
                             </svg>
-                            Guardar
+                            {processing === mov.id ? 'Procesando...' : 'Reenviar'}
                           </button>
                           <button
                             onClick={handleCancelEdit}
-                            className="flex-1 bg-gray-500 hover:bg-gray-600 text-white px-6 py-3 rounded-lg font-medium transition-colors"
+                            disabled={processing === mov.id}
+                            className="flex-1 bg-gray-500 hover:bg-gray-600 text-white px-6 py-3 rounded-lg font-medium transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
                           >
                             Cancelar
                           </button>
@@ -409,21 +521,23 @@ export default function MisMovimientosPage() {
                         <>
                           <button
                             onClick={() => handleEdit(mov)}
-                            className="flex-1 btn-primary flex items-center justify-center gap-2"
+                            disabled={processing === mov.id}
+                            className="flex-1 btn-primary flex items-center justify-center gap-2 disabled:opacity-50 disabled:cursor-not-allowed"
                           >
                             <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                               <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z" />
                             </svg>
-                            Editar
+                            Editar y Reenviar
                           </button>
                           <button
-                            onClick={() => handleCancelarMovimiento(mov.id)}
-                            className="flex-1 bg-red-600 hover:bg-red-700 text-white px-6 py-3 rounded-lg font-medium transition-colors flex items-center justify-center gap-2"
+                            onClick={() => handleAnular(mov.id)}
+                            disabled={processing === mov.id}
+                            className="flex-1 bg-red-600 hover:bg-red-700 text-white px-6 py-3 rounded-lg font-medium transition-colors flex items-center justify-center gap-2 disabled:opacity-50 disabled:cursor-not-allowed"
                           >
                             <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
+                              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M18.364 18.364A9 9 0 005.636 5.636m12.728 12.728A9 9 0 015.636 5.636m12.728 12.728L5.636 5.636" />
                             </svg>
-                            Cancelar
+                            {processing === mov.id ? 'Procesando...' : 'Anular'}
                           </button>
                         </>
                       )}

@@ -2,7 +2,7 @@ import NextAuth from "next-auth";
 import Credentials from "next-auth/providers/credentials";
 import Google from "next-auth/providers/google";
 import { db } from "@/db";
-import { users } from "@/db/schema";
+import { users, almacenes } from "@/db/schema";
 import { eq } from "drizzle-orm";
 import type { Role } from "./permissions";
 
@@ -33,7 +33,7 @@ export const { handlers, signIn, signOut, auth } = NextAuth({
         const searchValue = credentials.email as string;
         const inputPassword = credentials.password as string;
 
-        // Buscar usuario por email O por nombre (para compatibilidad)
+        // Buscar usuario por email con su almacén
         const userByEmail = await db
           .select({
             id: users.id,
@@ -42,8 +42,10 @@ export const { handlers, signIn, signOut, auth } = NextAuth({
             password: users.password,
             almacenId: users.almacenId,
             rol: users.rol,
+            almacenNombre: almacenes.nombre, // Join
           })
           .from(users)
+          .leftJoin(almacenes, eq(users.almacenId, almacenes.id))
           .where(eq(users.email, searchValue))
           .limit(1);
 
@@ -59,8 +61,10 @@ export const { handlers, signIn, signOut, auth } = NextAuth({
               password: users.password,
               almacenId: users.almacenId,
               rol: users.rol,
+              almacenNombre: almacenes.nombre, // Join
             })
             .from(users)
+            .leftJoin(almacenes, eq(users.almacenId, almacenes.id))
             .where(eq(users.nombre, searchValue))
             .limit(1);
 
@@ -72,8 +76,6 @@ export const { handlers, signIn, signOut, auth } = NextAuth({
         }
 
         // Verificar contraseña
-        // Por ahora, comparación simple de texto plano
-        // En producción, deberías usar bcrypt para comparar hashes
         if (foundUser.password !== inputPassword) {
           return null;
         }
@@ -84,16 +86,15 @@ export const { handlers, signIn, signOut, auth } = NextAuth({
           name: foundUser.nombre,
           rol: foundUser.rol || "operador",
           almacenId: foundUser.almacenId,
+          almacenNombre: foundUser.almacenNombre, // Add to object
         };
       },
     }),
   ],
   callbacks: {
     async signIn({ user, account, profile }) {
-      // Si es login con Google, buscar o crear usuario
       if (account?.provider === "google" && user.email) {
         try {
-          // Buscar usuario por email
           const existingUser = await db
             .select({
               id: users.id,
@@ -106,31 +107,27 @@ export const { handlers, signIn, signOut, auth } = NextAuth({
             .where(eq(users.email, user.email))
             .limit(1);
 
-          // Si no existe, crear nuevo usuario
           if (existingUser.length === 0) {
             await db.insert(users).values({
               nombre: user.name || user.email.split('@')[0],
               email: user.email,
-              rol: 'operador', // Rol por defecto
+              rol: 'operador',
             });
           }
-
           return true;
         } catch (error) {
           console.error('Error en signIn callback:', error);
           return false;
         }
       }
-
       return true;
     },
     async jwt({ token, user, account }) {
-      // Si es login inicial
       if (user) {
-        // Agregar datos del usuario al token
         token.id = user.id;
         token.rol = (user as any).rol || 'operador';
         token.almacenId = (user as any).almacenId;
+        token.almacenNombre = (user as any).almacenNombre; // Store name
       }
       return token;
     },
@@ -139,6 +136,7 @@ export const { handlers, signIn, signOut, auth } = NextAuth({
         session.user.id = token.id as string;
         (session.user as any).rol = token.rol as Role;
         (session.user as any).almacenId = token.almacenId as number | null;
+        (session.user as any).almacenNombre = token.almacenNombre as string | null; // Pass to session
       }
       return session;
     },

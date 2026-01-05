@@ -141,3 +141,27 @@ export async function marcarTodasComoLeidas(usuarioId: number) {
     return false;
   }
 }
+
+// Generic notification creation function
+export async function crearNotificacion(
+  usuarioId: number,
+  movimientoId: number,
+  tipo: string,
+  titulo: string,
+  mensaje: string
+) {
+  try {
+    await db.insert(notificaciones).values({
+      usuarioId: usuarioId,
+      movimientoId: movimientoId,
+      tipo: tipo,
+      titulo: titulo,
+      mensaje: mensaje,
+    });
+
+    return true;
+  } catch (error) {
+    console.error('Error al crear notificación:', error);
+    return false;
+  }
+}
