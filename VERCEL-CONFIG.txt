@@ -1,0 +1,88 @@
+╔════════════════════════════════════════════════════════════════════════════╗
+║              CONFIGURACIÓN URGENTE DE VARIABLES DE ENTORNO                 ║
+║                        EN VERCEL DASHBOARD                                 ║
+╚════════════════════════════════════════════════════════════════════════════╝
+
+⚠️  IMPORTANTE: Sin estas variables, la aplicación NO funcionará ⚠️
+
+┌────────────────────────────────────────────────────────────────────────────┐
+│ PASO 1: Ir a Vercel Dashboard                                             │
+└────────────────────────────────────────────────────────────────────────────┘
+URL: https://vercel.com/dashboard
+→ Click en tu proyecto "control-canastillos"
+→ Click en "Settings" (arriba)
+→ Click en "Environment Variables" (menú lateral izquierdo)
+
+┌────────────────────────────────────────────────────────────────────────────┐
+│ PASO 2: Agregar Variables de Entorno (una por una)                        │
+└────────────────────────────────────────────────────────────────────────────┘
+
+┌─ VARIABLE 1 ─────────────────────────────────────────────────────────────┐
+│ Name:                                                                     │
+│   DATABASE_URL                                                            │
+│                                                                           │
+│ Value:                                                                    │
+│   postgresql://neondb_owner:npg_kvJW2NRgKwl6@ep-solitary-cherry-add629aj-pooler.c-2.us-east-1.aws.neon.tech/neondb?sslmode=require
+│                                                                           │
+│ Environments: ✓ Production  ✓ Preview  ✓ Development                     │
+└───────────────────────────────────────────────────────────────────────────┘
+
+┌─ VARIABLE 2 ─────────────────────────────────────────────────────────────┐
+│ Name:                                                                     │
+│   GEMINI_API_KEY                                                          │
+│                                                                           │
+│ Value:                                                                    │
+│   AIzaSyBvQXEVvRuQ4kowGFIBmrt-yILIrSKmJ7U                                 │
+│                                                                           │
+│ Environments: ✓ Production  ✓ Preview  ✓ Development                     │
+└───────────────────────────────────────────────────────────────────────────┘
+
+┌─ VARIABLE 3 ─────────────────────────────────────────────────────────────┐
+│ Name:                                                                     │
+│   NEXTAUTH_SECRET                                                         │
+│                                                                           │
+│ Value:                                                                    │
+│   UwZHnSzRSkFXKs1qWlOsg79rjUDlv/aumzuPcTI4hH4=                            │
+│                                                                           │
+│ Environments: ✓ Production  ✓ Preview  ✓ Development                     │
+└───────────────────────────────────────────────────────────────────────────┘
+
+┌─ VARIABLE 4 ⚠️  LA MÁS IMPORTANTE ────────────────────────────────────────┐
+│ Name:                                                                     │
+│   NEXTAUTH_URL                                                            │
+│                                                                           │
+│ Value: ⚠️  USAR TU URL DE VERCEL, NO LOCALHOST ⚠️                        │
+│   https://control-canastillos-m3w8-ricardos-projects-d6c93ef2.vercel.app │
+│                                                                           │
+│ ❌ NO uses: http://localhost:3000                                         │
+│ ✅ USA: https://tu-url-exacta.vercel.app                                  │
+│                                                                           │
+│ Environments: ✓ Production  ✓ Preview  ✓ Development                     │
+└───────────────────────────────────────────────────────────────────────────┘
+
+┌────────────────────────────────────────────────────────────────────────────┐
+│ PASO 3: Redeploy (DESPUÉS de agregar las 4 variables)                     │
+└────────────────────────────────────────────────────────────────────────────┘
+1. Click en "Deployments" (arriba)
+2. Encuentra el último deployment
+3. Click en los 3 puntos (...) a la derecha
+4. Click en "Redeploy"
+5. ✅ Selecciona "Clear build cache and redeploy"
+6. Click en "Redeploy"
+
+┌────────────────────────────────────────────────────────────────────────────┐
+│ VERIFICACIÓN                                                               │
+└────────────────────────────────────────────────────────────────────────────┘
+Después del redeploy, verifica que:
+✓ La URL abre sin error "Application error"
+✓ Te redirige automáticamente a /login
+✓ Puedes iniciar sesión
+✓ El dashboard carga correctamente
+
+┌────────────────────────────────────────────────────────────────────────────┐
+│ ¿AÚN TIENES PROBLEMAS?                                                    │
+└────────────────────────────────────────────────────────────────────────────┘
+1. Verifica que las 4 variables estén configuradas (Settings → Environment Variables)
+2. Verifica que NEXTAUTH_URL sea tu URL de Vercel, NO localhost
+3. Haz redeploy con "Clear build cache"
+4. Revisa los logs en Vercel (Deployments → [deployment] → Runtime Logs)
