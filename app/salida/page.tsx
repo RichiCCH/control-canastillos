@@ -31,6 +31,7 @@ export default function SalidaPage() {
   const [almacenes, setAlmacenes] = useState<Almacen[]>([]);
   const [productos, setProductos] = useState<Producto[]>([]);
   const [almacenDestinoId, setAlmacenDestinoId] = useState('');
+  const [transportadoPor, setTransportadoPor] = useState('');
   const [productosSeleccionados, setProductosSeleccionados] = useState<ProductoSeleccionado[]>([]);
   const [productoActual, setProductoActual] = useState('');
   const [cantidadActual, setCantidadActual] = useState('');
@@ -186,6 +187,7 @@ export default function SalidaPage() {
         body: JSON.stringify({
           almacenDestinoId: parseInt(almacenDestinoId),
           usuarioSolicitanteId: userId,
+          transportadoPor: transportadoPor || null,
           observaciones: observaciones || null,
           detalles: productosSeleccionados.map(p => ({
             productoId: p.productoId,
@@ -243,6 +245,7 @@ export default function SalidaPage() {
 
       // Limpiar formulario
       setAlmacenDestinoId('');
+      setTransportadoPor('');
       setProductosSeleccionados([]);
       setObservaciones('');
     } catch (error: unknown) {
@@ -320,15 +323,32 @@ export default function SalidaPage() {
                   required
                 >
                   <option value="">Seleccionar almacén...</option>
-                  {almacenes.map((almacen) => (
-                    <option key={almacen.id} value={almacen.id}>
-                      {almacen.nombre}
-                    </option>
-                  ))}
+                  {almacenes
+                    .filter(almacen => almacen.id !== (session?.user as any)?.almacenId)
+                    .map((almacen) => (
+                      <option key={almacen.id} value={almacen.id}>
+                        {almacen.nombre}
+                      </option>
+                    ))}
                 </select>
               </div>
 
-              {/* 2. Observaciones */}
+              {/* 2. Transportado Por */}
+              <div>
+                <label htmlFor="transportadoPor" className="block text-sm font-semibold text-[#64748B] mb-2">
+                  Transportado Por (Opcional)
+                </label>
+                <input
+                  type="text"
+                  id="transportadoPor"
+                  value={transportadoPor}
+                  onChange={(e) => setTransportadoPor(e.target.value)}
+                  placeholder="Nombre del transportista o empresa..."
+                  className="input-field"
+                />
+              </div>
+
+              {/* 3. Observaciones */}
               <div>
                 <label htmlFor="observaciones" className="block text-sm font-semibold text-[#64748B] mb-2">
                   Observaciones (Opcional)
@@ -343,7 +363,7 @@ export default function SalidaPage() {
                 />
               </div>
 
-              {/* 3. Botón para Agregar Productos */}
+              {/* 4. Botón para Agregar Productos */}
               <div className="border-t border-[#E5E7EB] pt-6">
                 <button
                   type="button"
@@ -459,7 +479,7 @@ export default function SalidaPage() {
                 </div>
               )}
 
-              {/* 4. Lista de Productos */}
+              {/* 5. Lista de Productos */}
               <div className="border-t border-[#E5E7EB] pt-6">
                 <h3 className="text-lg font-['Playfair_Display'] font-bold text-[#1F2937] mb-4 flex items-center gap-2">
                   <svg className="w-6 h-6 text-[#2563EB]" fill="none" stroke="currentColor" viewBox="0 0 24 24">
