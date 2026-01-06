@@ -8,17 +8,18 @@ import type { Role } from "./permissions";
 
 export const { handlers, signIn, signOut, auth } = NextAuth({
   providers: [
-    Google({
-      clientId: process.env.GOOGLE_CLIENT_ID!,
-      clientSecret: process.env.GOOGLE_CLIENT_SECRET!,
-      authorization: {
-        params: {
-          prompt: "consent",
-          access_type: "offline",
-          response_type: "code"
-        }
-      }
-    }),
+    // Google OAuth temporarily disabled - uncomment when credentials are configured
+    // Google({
+    //   clientId: process.env.GOOGLE_CLIENT_ID!,
+    //   clientSecret: process.env.GOOGLE_CLIENT_SECRET!,
+    //   authorization: {
+    //     params: {
+    //       prompt: "consent",
+    //       access_type: "offline",
+    //       response_type: "code"
+    //     }
+    //   }
+    // }),
     Credentials({
       name: "Credentials",
       credentials: {

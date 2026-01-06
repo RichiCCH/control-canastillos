@@ -1,6 +1,6 @@
 import type { Metadata } from "next";
 import "./globals.css";
-import { SessionProvider } from "next-auth/react";
+import { Providers } from "@/components/providers";
 
 export const metadata: Metadata = {
   title: "Control de Inventario - Sistema de Gestión",
@@ -15,7 +15,7 @@ export default function RootLayout({
   return (
     <html lang="es" className="h-full">
       <body className="antialiased min-h-screen flex flex-col bg-gray-50 h-full font-sans">
-        <SessionProvider>
+        <Providers>
           <div className="flex-grow">
             {children}
           </div>
@@ -80,7 +80,7 @@ export default function RootLayout({
               </div>
             </div>
           </footer>
-        </SessionProvider>
+        </Providers>
       </body>
     </html>
   );

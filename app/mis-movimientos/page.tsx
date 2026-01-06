@@ -195,10 +195,10 @@ export default function MisMovimientosPage() {
     return movimiento.detalles.reduce((sum, det) => sum + det.cantidad, 0);
   };
 
-  const movimientosPendientes = movimientos.filter(m => m.estado === 'pendiente');
-  const movimientosAprobados = movimientos.filter(m => m.estado === 'aprobado');
-  const movimientosRechazados = movimientos.filter(m => m.estado === 'rechazado');
-  const movimientosAnulados = movimientos.filter(m => m.estado === 'anulado');
+  // Only show pending and rejected movements
+  const movimientosFiltrados = movimientos.filter(m => m.estado === 'pendiente' || m.estado === 'rechazado');
+  const movimientosPendientes = movimientosFiltrados.filter(m => m.estado === 'pendiente');
+  const movimientosRechazados = movimientosFiltrados.filter(m => m.estado === 'rechazado');
 
   if (loading) {
     return (
@@ -243,23 +243,7 @@ export default function MisMovimientosPage() {
         )}
 
         {/* Stats Summary */}
-        <div className="grid grid-cols-1 md:grid-cols-3 lg:grid-cols-5 gap-6 mb-6">
-          <div className="card bg-white">
-            <div className="flex items-center justify-between">
-              <div>
-                <p className="text-[#64748B] text-sm font-medium">Total Movimientos</p>
-                <p className="text-3xl font-['Montserrat'] font-bold text-[#1F2937] mt-1">
-                  {movimientos.length}
-                </p>
-              </div>
-              <div className="bg-blue-100 rounded-full p-3">
-                <svg className="w-8 h-8 text-[#2563EB]" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2" />
-                </svg>
-              </div>
-            </div>
-          </div>
-
+        <div className="grid grid-cols-1 md:grid-cols-2 gap-6 mb-6">
           <div className="card bg-white">
             <div className="flex items-center justify-between">
               <div>
@@ -271,22 +255,6 @@ export default function MisMovimientosPage() {
               <div className="bg-yellow-100 rounded-full p-3">
                 <svg className="w-8 h-8 text-yellow-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                   <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z" />
-                </svg>
-              </div>
-            </div>
-          </div>
-
-          <div className="card bg-white">
-            <div className="flex items-center justify-between">
-              <div>
-                <p className="text-[#64748B] text-sm font-medium">Aprobados</p>
-                <p className="text-3xl font-['Montserrat'] font-bold text-[#10B981] mt-1">
-                  {movimientosAprobados.length}
-                </p>
-              </div>
-              <div className="bg-green-100 rounded-full p-3">
-                <svg className="w-8 h-8 text-[#10B981]" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z" />
                 </svg>
               </div>
             </div>
@@ -307,37 +275,21 @@ export default function MisMovimientosPage() {
               </div>
             </div>
           </div>
-
-          <div className="card bg-white">
-            <div className="flex items-center justify-between">
-              <div>
-                <p className="text-[#64748B] text-sm font-medium">Anulados</p>
-                <p className="text-3xl font-['Montserrat'] font-bold text-gray-600 mt-1">
-                  {movimientosAnulados.length}
-                </p>
-              </div>
-              <div className="bg-gray-100 rounded-full p-3">
-                <svg className="w-8 h-8 text-gray-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M18.364 18.364A9 9 0 005.636 5.636m12.728 12.728A9 9 0 015.636 5.636m12.728 12.728L5.636 5.636" />
-                </svg>
-              </div>
-            </div>
-          </div>
         </div>
 
-        {movimientos.length === 0 ? (
+        {movimientosFiltrados.length === 0 ? (
           <div className="card bg-white">
             <div className="text-center py-12">
               <svg className="mx-auto h-16 w-16 text-[#CBD5E1] mb-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z" />
               </svg>
-              <p className="text-[#64748B] text-lg">No has creado movimientos aún</p>
-              <p className="text-[#64748B] text-sm mt-2">Ve a "Registrar Salida" para crear tu primer movimiento</p>
+              <p className="text-[#64748B] text-lg">No tienes movimientos pendientes o rechazados</p>
+              <p className="text-[#64748B] text-sm mt-2">Todos tus movimientos han sido procesados</p>
             </div>
           </div>
         ) : (
           <div className="space-y-4">
-            {movimientos.map((mov) => (
+            {movimientosFiltrados.map((mov) => (
               <div key={mov.id} className="card bg-white hover:shadow-xl transition-shadow">
                 <div className="flex flex-col lg:flex-row lg:items-start lg:justify-between gap-6">
                   {/* Left Side - Movimiento Info */}

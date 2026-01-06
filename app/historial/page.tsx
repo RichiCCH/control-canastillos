@@ -4,6 +4,7 @@ import { useState, useEffect } from 'react';
 import { useSession } from 'next-auth/react';
 import { useRouter } from 'next/navigation';
 import Navigation from '@/components/navigation';
+import * as XLSX from 'xlsx';
 
 interface Movimiento {
   id: number;
@@ -99,12 +100,14 @@ export default function HistorialPage() {
       pendiente: 'bg-yellow-100 text-yellow-800',
       aprobado: 'bg-green-100 text-green-800',
       rechazado: 'bg-red-100 text-red-800',
+      anulado: 'bg-gray-100 text-gray-800',
     };
 
     const labels: Record<string, string> = {
       pendiente: 'Pendiente',
       aprobado: 'Aprobado',
       rechazado: 'Rechazado',
+      anulado: 'Anulado',
     };
 
     return (
@@ -135,6 +138,79 @@ export default function HistorialPage() {
       hour: '2-digit',
       minute: '2-digit',
     });
+  };
+
+  const exportToExcel = () => {
+    // Preparar datos para Excel
+    const excelData = filteredMovimientos.map(mov => {
+      // Crear una fila base con la información del movimiento
+      const baseRow = {
+        'ID Movimiento': mov.id,
+        'Tipo': mov.tipo === 'entrada' ? 'Entrada' : 'Salida',
+        'Estado': mov.estado.charAt(0).toUpperCase() + mov.estado.slice(1),
+        'Almacén Origen': mov.almacenOrigen.nombre,
+        'Almacén Destino': mov.almacenDestino.nombre,
+        'Usuario Solicitante': mov.usuarioSolicitante.nombre,
+        'Usuario Aprobador': mov.usuarioAprobador?.nombre || 'N/A',
+        'Fecha Solicitud': formatDate(mov.fechaSolicitud),
+        'Fecha Aprobación': mov.fechaAprobacion ? formatDate(mov.fechaAprobacion) : 'N/A',
+        'Observaciones': mov.observaciones || 'N/A',
+      };
+
+      // Si hay detalles, crear una fila por cada producto
+      if (mov.detalles && mov.detalles.length > 0) {
+        return mov.detalles.map((detalle, index) => ({
+          ...baseRow,
+          'Producto Código': detalle.producto.codigo,
+          'Producto Nombre': detalle.producto.nombre,
+          'Producto Tipo': detalle.producto.tipo,
+          'Cantidad': detalle.cantidad,
+          'Unidad': detalle.producto.unidadMedida,
+        }));
+      }
+
+      // Si no hay detalles, devolver solo la fila base
+      return [{
+        ...baseRow,
+        'Producto Código': 'N/A',
+        'Producto Nombre': 'Sin productos',
+        'Producto Tipo': 'N/A',
+        'Cantidad': 0,
+        'Unidad': 'N/A',
+      }];
+    }).flat(); // Aplanar el array de arrays
+
+    // Crear libro de trabajo
+    const ws = XLSX.utils.json_to_sheet(excelData);
+    const wb = XLSX.utils.book_new();
+    XLSX.utils.book_append_sheet(wb, ws, 'Historial');
+
+    // Ajustar ancho de columnas
+    const colWidths = [
+      { wch: 12 }, // ID Movimiento
+      { wch: 10 }, // Tipo
+      { wch: 12 }, // Estado
+      { wch: 20 }, // Almacén Origen
+      { wch: 20 }, // Almacén Destino
+      { wch: 20 }, // Usuario Solicitante
+      { wch: 20 }, // Usuario Aprobador
+      { wch: 18 }, // Fecha Solicitud
+      { wch: 18 }, // Fecha Aprobación
+      { wch: 30 }, // Observaciones
+      { wch: 15 }, // Producto Código
+      { wch: 25 }, // Producto Nombre
+      { wch: 18 }, // Producto Tipo
+      { wch: 10 }, // Cantidad
+      { wch: 10 }, // Unidad
+    ];
+    ws['!cols'] = colWidths;
+
+    // Generar nombre de archivo con timestamp
+    const timestamp = new Date().toISOString().slice(0, 10);
+    const filename = `historial_movimientos_${timestamp}.xlsx`;
+
+    // Descargar archivo
+    XLSX.writeFile(wb, filename);
   };
 
   // Filtrar movimientos
@@ -183,17 +259,17 @@ export default function HistorialPage() {
         </div>
 
         {/* Stats Cards */}
-        <div className="grid grid-cols-1 md:grid-cols-4 gap-6 mb-6">
+        <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-6 gap-4 mb-6">
           <div className="card bg-white">
             <div className="flex items-center justify-between">
               <div>
-                <p className="text-[#64748B] text-sm font-medium">Total</p>
-                <p className="text-3xl font-['Montserrat'] font-bold text-[#1F2937] mt-1">
+                <p className="text-[#64748B] text-xs font-medium">Total</p>
+                <p className="text-2xl font-['Montserrat'] font-bold text-[#1F2937] mt-1">
                   {movimientos.length}
                 </p>
               </div>
-              <div className="bg-blue-100 rounded-full p-3">
-                <svg className="w-8 h-8 text-[#2563EB]" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <div className="bg-blue-100 rounded-full p-2">
+                <svg className="w-6 h-6 text-[#2563EB]" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                   <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
                 </svg>
               </div>
@@ -203,13 +279,13 @@ export default function HistorialPage() {
           <div className="card bg-white">
             <div className="flex items-center justify-between">
               <div>
-                <p className="text-[#64748B] text-sm font-medium">Entradas</p>
-                <p className="text-3xl font-['Montserrat'] font-bold text-blue-600 mt-1">
+                <p className="text-[#64748B] text-xs font-medium">Entradas</p>
+                <p className="text-2xl font-['Montserrat'] font-bold text-blue-600 mt-1">
                   {movimientos.filter(m => m.tipo === 'entrada').length}
                 </p>
               </div>
-              <div className="bg-blue-100 rounded-full p-3">
-                <span className="text-3xl">📥</span>
+              <div className="bg-blue-100 rounded-full p-2">
+                <span className="text-2xl">📥</span>
               </div>
             </div>
           </div>
@@ -217,13 +293,13 @@ export default function HistorialPage() {
           <div className="card bg-white">
             <div className="flex items-center justify-between">
               <div>
-                <p className="text-[#64748B] text-sm font-medium">Salidas</p>
-                <p className="text-3xl font-['Montserrat'] font-bold text-purple-600 mt-1">
+                <p className="text-[#64748B] text-xs font-medium">Salidas</p>
+                <p className="text-2xl font-['Montserrat'] font-bold text-purple-600 mt-1">
                   {movimientos.filter(m => m.tipo === 'salida').length}
                 </p>
               </div>
-              <div className="bg-purple-100 rounded-full p-3">
-                <span className="text-3xl">📤</span>
+              <div className="bg-purple-100 rounded-full p-2">
+                <span className="text-2xl">📤</span>
               </div>
             </div>
           </div>
@@ -231,14 +307,46 @@ export default function HistorialPage() {
           <div className="card bg-white">
             <div className="flex items-center justify-between">
               <div>
-                <p className="text-[#64748B] text-sm font-medium">Aprobados</p>
-                <p className="text-3xl font-['Montserrat'] font-bold text-green-600 mt-1">
+                <p className="text-[#64748B] text-xs font-medium">Aprobados</p>
+                <p className="text-2xl font-['Montserrat'] font-bold text-green-600 mt-1">
                   {movimientos.filter(m => m.estado === 'aprobado').length}
                 </p>
               </div>
-              <div className="bg-green-100 rounded-full p-3">
-                <svg className="w-8 h-8 text-green-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <div className="bg-green-100 rounded-full p-2">
+                <svg className="w-6 h-6 text-green-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                   <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" />
+                </svg>
+              </div>
+            </div>
+          </div>
+
+          <div className="card bg-white">
+            <div className="flex items-center justify-between">
+              <div>
+                <p className="text-[#64748B] text-xs font-medium">Rechazados</p>
+                <p className="text-2xl font-['Montserrat'] font-bold text-red-600 mt-1">
+                  {movimientos.filter(m => m.estado === 'rechazado').length}
+                </p>
+              </div>
+              <div className="bg-red-100 rounded-full p-2">
+                <svg className="w-6 h-6 text-red-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+                </svg>
+              </div>
+            </div>
+          </div>
+
+          <div className="card bg-white">
+            <div className="flex items-center justify-between">
+              <div>
+                <p className="text-[#64748B] text-xs font-medium">Anulados</p>
+                <p className="text-2xl font-['Montserrat'] font-bold text-gray-600 mt-1">
+                  {movimientos.filter(m => m.estado === 'anulado').length}
+                </p>
+              </div>
+              <div className="bg-gray-100 rounded-full p-2">
+                <svg className="w-6 h-6 text-gray-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M18.364 18.364A9 9 0 005.636 5.636m12.728 12.728A9 9 0 015.636 5.636m12.728 12.728L5.636 5.636" />
                 </svg>
               </div>
             </div>
@@ -263,10 +371,11 @@ export default function HistorialPage() {
                 }}
                 className="input-field"
               >
-                <option value="todos">Todos</option>
+                <option value="todos">Todos los estados</option>
                 <option value="pendiente">Pendiente</option>
                 <option value="aprobado">Aprobado</option>
                 <option value="rechazado">Rechazado</option>
+                <option value="anulado">Anulado</option>
               </select>
             </div>
 
@@ -288,16 +397,26 @@ export default function HistorialPage() {
               </select>
             </div>
 
-            <div className="flex items-end">
+            <div className="flex items-end gap-3">
               <button
                 onClick={() => {
                   setFilterEstado('todos');
                   setFilterTipo('todos');
                   setCurrentPage(1);
                 }}
-                className="btn-primary w-full"
+                className="flex-1 bg-gray-600 hover:bg-gray-700 text-white px-4 py-2.5 rounded-lg font-semibold transition-colors"
               >
                 Limpiar Filtros
+              </button>
+              <button
+                onClick={exportToExcel}
+                disabled={filteredMovimientos.length === 0}
+                className="flex-1 bg-green-600 hover:bg-green-700 text-white px-4 py-2.5 rounded-lg font-semibold transition-colors disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center gap-2"
+              >
+                <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 10v6m0 0l-3-3m3 3l3-3m2 8H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
+                </svg>
+                Exportar Excel
               </button>
             </div>
           </div>
