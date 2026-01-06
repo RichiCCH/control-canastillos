@@ -38,7 +38,17 @@
       "Bash(dir:*)",
       "Bash(node check-db-enum.mjs:*)",
       "Bash(node check-db-enum2.mjs:*)",
-      "Bash(del:*)"
+      "Bash(del:*)",
+      "Bash(netstat:*)",
+      "Bash(start /B npm run dev)",
+      "Bash(npx tsc --noEmit)",
+      "Bash(vercel env:*)",
+      "Bash(vercel login)",
+      "Bash(vercel whoami:*)",
+      "Bash(vercel link:*)",
+      "Bash(vercel --prod:*)",
+      "Bash(vercel logs:*)",
+      "Bash(cmd.exe /c \"taskkill /F /PID 7096\")"
     ]
   }
 }

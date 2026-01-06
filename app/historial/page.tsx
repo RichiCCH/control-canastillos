@@ -5,11 +5,13 @@ import { useSession } from 'next-auth/react';
 import { useRouter } from 'next/navigation';
 import Navigation from '@/components/navigation';
 import * as XLSX from 'xlsx';
+import { generarPDFSalida, generarPDFRecepcion } from '@/lib/utils/pdf';
 
 interface Movimiento {
   id: number;
   estado: string;
   observaciones: string | null;
+  transportadoPor: string | null;
   fechaSolicitud: string;
   fechaAprobacion: string | null;
   tipo: 'entrada' | 'salida';
@@ -52,6 +54,7 @@ export default function HistorialPage() {
   const [selectedAlmacen, setSelectedAlmacen] = useState<number | null>(null);
   const [filterEstado, setFilterEstado] = useState<string>('todos');
   const [filterTipo, setFilterTipo] = useState<string>('todos');
+  const [filterMovimientos, setFilterMovimientos] = useState<string>('');
 
   useEffect(() => {
     if (status === 'loading') return;
@@ -140,6 +143,50 @@ export default function HistorialPage() {
     });
   };
 
+  const handleReimprimirSalida = (movimiento: Movimiento) => {
+    generarPDFSalida({
+      id: movimiento.id,
+      estado: movimiento.estado,
+      fechaSolicitud: movimiento.fechaSolicitud,
+      fechaAprobacion: movimiento.fechaAprobacion || undefined,
+      almacenOrigen: movimiento.almacenOrigen,
+      almacenDestino: movimiento.almacenDestino,
+      usuarioSolicitante: movimiento.usuarioSolicitante,
+      usuarioAprobador: movimiento.usuarioAprobador || undefined,
+      transportadoPor: movimiento.transportadoPor || undefined,
+      observaciones: movimiento.observaciones || undefined,
+      detalles: movimiento.detalles.map(d => ({
+        codigo: d.producto.codigo,
+        nombre: d.producto.nombre,
+        tipo: d.producto.tipo,
+        cantidad: d.cantidad,
+        unidadMedida: d.producto.unidadMedida,
+      })),
+    });
+  };
+
+  const handleReimprimirRecepcion = (movimiento: Movimiento) => {
+    generarPDFRecepcion({
+      id: movimiento.id,
+      estado: movimiento.estado,
+      fechaSolicitud: movimiento.fechaSolicitud,
+      fechaAprobacion: movimiento.fechaAprobacion || undefined,
+      almacenOrigen: movimiento.almacenOrigen,
+      almacenDestino: movimiento.almacenDestino,
+      usuarioSolicitante: movimiento.usuarioSolicitante,
+      usuarioAprobador: movimiento.usuarioAprobador || undefined,
+      transportadoPor: movimiento.transportadoPor || undefined,
+      observaciones: movimiento.observaciones || undefined,
+      detalles: movimiento.detalles.map(d => ({
+        codigo: d.producto.codigo,
+        nombre: d.producto.nombre,
+        tipo: d.producto.tipo,
+        cantidad: d.cantidad,
+        unidadMedida: d.producto.unidadMedida,
+      })),
+    });
+  };
+
   const exportToExcel = () => {
     // Preparar datos para Excel
     const excelData = filteredMovimientos.map(mov => {
@@ -217,6 +264,21 @@ export default function HistorialPage() {
   const filteredMovimientos = movimientos.filter((mov) => {
     if (filterEstado !== 'todos' && mov.estado !== filterEstado) return false;
     if (filterTipo !== 'todos' && mov.tipo !== filterTipo) return false;
+
+    // Filtrar por números de movimiento
+    if (filterMovimientos.trim() !== '') {
+      const numerosIngresados = filterMovimientos
+        .split(',')
+        .map(num => num.trim())
+        .filter(num => num !== '')
+        .map(num => parseInt(num))
+        .filter(num => !isNaN(num));
+
+      if (numerosIngresados.length > 0) {
+        if (!numerosIngresados.includes(mov.id)) return false;
+      }
+    }
+
     return true;
   });
 
@@ -358,7 +420,7 @@ export default function HistorialPage() {
           <h3 className="text-lg font-['Montserrat'] font-semibold text-[#1F2937] mb-4">
             Filtros
           </h3>
-          <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+          <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
             <div>
               <label className="block text-sm font-medium text-[#64748B] mb-2">
                 Estado
@@ -397,11 +459,29 @@ export default function HistorialPage() {
               </select>
             </div>
 
+            <div>
+              <label className="block text-sm font-medium text-[#64748B] mb-2">
+                N° de Movimiento(s)
+              </label>
+              <input
+                type="text"
+                value={filterMovimientos}
+                onChange={(e) => {
+                  setFilterMovimientos(e.target.value);
+                  setCurrentPage(1);
+                }}
+                placeholder="Ej: 25, 30, 45"
+                className="input-field"
+              />
+              <p className="text-xs text-[#64748B] mt-1">Separa múltiples números con comas</p>
+            </div>
+
             <div className="flex items-end gap-3">
               <button
                 onClick={() => {
                   setFilterEstado('todos');
                   setFilterTipo('todos');
+                  setFilterMovimientos('');
                   setCurrentPage(1);
                 }}
                 className="flex-1 bg-gray-600 hover:bg-gray-700 text-white px-4 py-2.5 rounded-lg font-semibold transition-colors"
@@ -514,11 +594,35 @@ export default function HistorialPage() {
                   </div>
 
                   {movimiento.observaciones && (
-                    <div className="bg-blue-50 rounded-lg p-3">
+                    <div className="bg-blue-50 rounded-lg p-3 mb-3">
                       <p className="text-xs text-[#64748B] mb-1">Observaciones:</p>
                       <p className="text-sm text-[#1F2937]">{movimiento.observaciones}</p>
                     </div>
                   )}
+
+                  {/* Botones de reimpresión */}
+                  <div className="flex gap-2 pt-3 border-t border-[#E5E7EB]">
+                    <button
+                      onClick={() => handleReimprimirSalida(movimiento)}
+                      className="flex-1 bg-blue-600 hover:bg-blue-700 text-white px-4 py-2 rounded-lg font-semibold transition-colors flex items-center justify-center gap-2"
+                    >
+                      <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M17 17h2a2 2 0 002-2v-4a2 2 0 00-2-2H5a2 2 0 00-2 2v4a2 2 0 002 2h2m2 4h6a2 2 0 002-2v-4a2 2 0 00-2-2H9a2 2 0 00-2 2v4a2 2 0 002 2zm8-12V5a2 2 0 00-2-2H9a2 2 0 00-2 2v4h10z" />
+                      </svg>
+                      PDF Salida
+                    </button>
+                    {movimiento.estado === 'aprobado' && (
+                      <button
+                        onClick={() => handleReimprimirRecepcion(movimiento)}
+                        className="flex-1 bg-green-600 hover:bg-green-700 text-white px-4 py-2 rounded-lg font-semibold transition-colors flex items-center justify-center gap-2"
+                      >
+                        <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z" />
+                        </svg>
+                        PDF Recepción
+                      </button>
+                    )}
+                  </div>
                 </div>
               ))}
             </div>

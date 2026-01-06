@@ -219,6 +219,7 @@ export default function SalidaPage() {
       if (almacenOrigen && almacenDestino && usuario) {
         generarPDFSalida({
           id: data.movimiento.id,
+          estado: 'pendiente',
           fechaSolicitud: data.movimiento.fechaSolicitud || new Date().toISOString(),
           almacenOrigen: {
             id: almacenOrigen.id,
@@ -232,6 +233,7 @@ export default function SalidaPage() {
             id: usuario.id,
             nombre: usuario.nombre,
           },
+          transportadoPor: transportadoPor || null,
           observaciones: observaciones || null,
           detalles: productosSeleccionados.map(p => ({
             codigo: p.producto.codigo,
