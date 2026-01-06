@@ -1,6 +1,7 @@
 'use client';
 
 import { useEffect, useState } from 'react';
+import { useRouter } from 'next/navigation';
 import Navigation from '@/components/navigation';
 import { useSession } from 'next-auth/react';
 
@@ -22,12 +23,18 @@ interface OperatorStats {
 type Stats = AdminStats | OperatorStats;
 
 export default function Home() {
+  const router = useRouter();
   const { data: session, status } = useSession();
   const [stats, setStats] = useState<Stats | null>(null);
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
     if (status === 'loading') return;
+
+    if (status === 'unauthenticated') {
+      router.push('/login');
+      return;
+    }
 
     const fetchStats = async () => {
       try {
@@ -52,7 +59,7 @@ export default function Home() {
     };
 
     fetchStats();
-  }, [session, status]);
+  }, [session, status, router]);
 
   return (
     <div className="min-h-screen" style={{ backgroundColor: '#e8e8e8' }}>
