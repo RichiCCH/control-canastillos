@@ -7,6 +7,16 @@ export type Permission =
   | 'admin.users.create'
   | 'admin.users.edit'
   | 'admin.users.delete'
+  | 'admin.almacenes.view'
+  | 'admin.almacenes.create'
+  | 'admin.almacenes.edit'
+  | 'admin.almacenes.delete'
+  | 'admin.productos.view'
+  | 'admin.productos.create'
+  | 'admin.productos.edit'
+  | 'admin.productos.delete'
+  | 'admin.ajustes.view'
+  | 'admin.ajustes.create'
   | 'movimientos.create'
   | 'movimientos.approve'
   | 'movimientos.reject'
@@ -25,6 +35,16 @@ const rolePermissions: Record<Role, Permission[]> = {
     'admin.users.create',
     'admin.users.edit',
     'admin.users.delete',
+    'admin.almacenes.view',
+    'admin.almacenes.create',
+    'admin.almacenes.edit',
+    'admin.almacenes.delete',
+    'admin.productos.view',
+    'admin.productos.create',
+    'admin.productos.edit',
+    'admin.productos.delete',
+    'admin.ajustes.view',
+    'admin.ajustes.create',
     'movimientos.create',
     'movimientos.approve',
     'movimientos.reject',

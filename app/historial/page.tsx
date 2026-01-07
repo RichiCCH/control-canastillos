@@ -9,24 +9,27 @@ import { generarPDFSalida, generarPDFRecepcion } from '@/lib/utils/pdf';
 
 interface Movimiento {
   id: number;
+  tipoMovimiento?: string;
   estado: string;
+  motivo?: string | null;
+  proveedorResponsable?: string | null;
   observaciones: string | null;
   transportadoPor: string | null;
   fechaSolicitud: string;
   fechaAprobacion: string | null;
-  tipo: 'entrada' | 'salida';
+  tipo: 'entrada' | 'salida' | 'ajuste_entrada' | 'ajuste_baja';
   almacenOrigen: {
     id: number;
     nombre: string;
-  };
+  } | null;
   almacenDestino: {
     id: number;
     nombre: string;
-  };
+  } | null;
   usuarioSolicitante: {
     id: number;
     nombre: string;
-  };
+  } | null;
   usuarioAprobador: {
     id: number;
     nombre: string;
@@ -120,16 +123,32 @@ export default function HistorialPage() {
     );
   };
 
-  const getTipoBadge = (tipo: 'entrada' | 'salida') => {
-    return tipo === 'entrada' ? (
-      <span className="px-3 py-1 rounded-full text-xs font-semibold bg-blue-100 text-blue-800">
-        📥 Entrada
-      </span>
-    ) : (
-      <span className="px-3 py-1 rounded-full text-xs font-semibold bg-purple-100 text-purple-800">
-        📤 Salida
-      </span>
-    );
+  const getTipoBadge = (tipo: 'entrada' | 'salida' | 'ajuste_entrada' | 'ajuste_baja') => {
+    if (tipo === 'ajuste_entrada') {
+      return (
+        <span className="px-3 py-1 rounded-full text-xs font-semibold bg-green-100 text-green-800">
+          ↑ Ajuste Entrada
+        </span>
+      );
+    } else if (tipo === 'ajuste_baja') {
+      return (
+        <span className="px-3 py-1 rounded-full text-xs font-semibold bg-red-100 text-red-800">
+          ↓ Ajuste Baja
+        </span>
+      );
+    } else if (tipo === 'entrada') {
+      return (
+        <span className="px-3 py-1 rounded-full text-xs font-semibold bg-blue-100 text-blue-800">
+          📥 Entrada
+        </span>
+      );
+    } else {
+      return (
+        <span className="px-3 py-1 rounded-full text-xs font-semibold bg-purple-100 text-purple-800">
+          📤 Salida
+        </span>
+      );
+    }
   };
 
   const formatDate = (dateString: string) => {
@@ -149,9 +168,9 @@ export default function HistorialPage() {
       estado: movimiento.estado,
       fechaSolicitud: movimiento.fechaSolicitud,
       fechaAprobacion: movimiento.fechaAprobacion || undefined,
-      almacenOrigen: movimiento.almacenOrigen,
-      almacenDestino: movimiento.almacenDestino,
-      usuarioSolicitante: movimiento.usuarioSolicitante,
+      almacenOrigen: movimiento.almacenOrigen || { id: 0, nombre: 'Desconocido' },
+      almacenDestino: movimiento.almacenDestino || { id: 0, nombre: 'Desconocido' },
+      usuarioSolicitante: movimiento.usuarioSolicitante || { id: 0, nombre: 'Desconocido' },
       usuarioAprobador: movimiento.usuarioAprobador || undefined,
       transportadoPor: movimiento.transportadoPor || undefined,
       observaciones: movimiento.observaciones || undefined,
@@ -171,9 +190,9 @@ export default function HistorialPage() {
       estado: movimiento.estado,
       fechaSolicitud: movimiento.fechaSolicitud,
       fechaAprobacion: movimiento.fechaAprobacion || undefined,
-      almacenOrigen: movimiento.almacenOrigen,
-      almacenDestino: movimiento.almacenDestino,
-      usuarioSolicitante: movimiento.usuarioSolicitante,
+      almacenOrigen: movimiento.almacenOrigen || { id: 0, nombre: 'Desconocido' },
+      almacenDestino: movimiento.almacenDestino || { id: 0, nombre: 'Desconocido' },
+      usuarioSolicitante: movimiento.usuarioSolicitante || { id: 0, nombre: 'Desconocido' },
       usuarioAprobador: movimiento.usuarioAprobador || undefined,
       transportadoPor: movimiento.transportadoPor || undefined,
       observaciones: movimiento.observaciones || undefined,
@@ -195,9 +214,9 @@ export default function HistorialPage() {
         'ID Movimiento': mov.id,
         'Tipo': mov.tipo === 'entrada' ? 'Entrada' : 'Salida',
         'Estado': mov.estado.charAt(0).toUpperCase() + mov.estado.slice(1),
-        'Almacén Origen': mov.almacenOrigen.nombre,
-        'Almacén Destino': mov.almacenDestino.nombre,
-        'Usuario Solicitante': mov.usuarioSolicitante.nombre,
+        'Almacén Origen': mov.almacenOrigen?.nombre || 'N/A',
+        'Almacén Destino': mov.almacenDestino?.nombre || 'N/A',
+        'Usuario Solicitante': mov.usuarioSolicitante?.nombre || 'N/A',
         'Usuario Aprobador': mov.usuarioAprobador?.nombre || 'N/A',
         'Fecha Solicitud': formatDate(mov.fechaSolicitud),
         'Fecha Aprobación': mov.fechaAprobacion ? formatDate(mov.fechaAprobacion) : 'N/A',
@@ -292,9 +311,11 @@ export default function HistorialPage() {
 
   if (loading) {
     return (
-      <div className="min-h-screen bg-[#F3F4F6]">
+      <div className="min-h-screen" style={{ backgroundColor: '#e8e8e8' }}>
         <Navigation />
-        <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 pt-24 pb-8">
+        {/* Spacer for fixed navigation */}
+        <div className="h-20"></div>
+        <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 pt-8 pb-8">
           <div className="card bg-white">
             <div className="flex items-center justify-center py-12">
               <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-[#2563EB]"></div>
@@ -307,15 +328,17 @@ export default function HistorialPage() {
   }
 
   return (
-    <div className="min-h-screen bg-[#F3F4F6]">
+    <div className="min-h-screen" style={{ backgroundColor: '#e8e8e8' }}>
       <Navigation />
-      <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 pt-24 pb-8">
+      {/* Spacer for fixed navigation */}
+      <div className="h-20"></div>
+      <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 pt-8 pb-8">
         {/* Header Section */}
-        <div className="bg-gradient-to-r from-[#1E3A8A] to-[#2563EB] rounded-2xl shadow-xl p-8 mb-8 text-white">
-          <h1 className="text-4xl font-['Montserrat'] font-bold mb-3">
+        <div className="mb-6">
+          <h1 className="text-2xl sm:text-3xl font-['Playfair_Display'] font-bold text-[#1F2937] mb-2">
             Historial de Movimientos
           </h1>
-          <p className="text-blue-100 text-lg">
+          <p className="text-sm sm:text-base text-[#64748B]">
             Registro completo de entradas y salidas de tu almacén
           </p>
         </div>
@@ -362,6 +385,34 @@ export default function HistorialPage() {
               </div>
               <div className="bg-purple-100 rounded-full p-2">
                 <span className="text-2xl">📤</span>
+              </div>
+            </div>
+          </div>
+
+          <div className="card bg-white">
+            <div className="flex items-center justify-between">
+              <div>
+                <p className="text-[#64748B] text-xs font-medium">Ajustes +</p>
+                <p className="text-2xl font-['Montserrat'] font-bold text-green-600 mt-1">
+                  {movimientos.filter(m => m.tipo === 'ajuste_entrada').length}
+                </p>
+              </div>
+              <div className="bg-green-100 rounded-full p-2">
+                <span className="text-2xl">↑</span>
+              </div>
+            </div>
+          </div>
+
+          <div className="card bg-white">
+            <div className="flex items-center justify-between">
+              <div>
+                <p className="text-[#64748B] text-xs font-medium">Ajustes -</p>
+                <p className="text-2xl font-['Montserrat'] font-bold text-red-600 mt-1">
+                  {movimientos.filter(m => m.tipo === 'ajuste_baja').length}
+                </p>
+              </div>
+              <div className="bg-red-100 rounded-full p-2">
+                <span className="text-2xl">↓</span>
               </div>
             </div>
           </div>
@@ -548,22 +599,45 @@ export default function HistorialPage() {
                   </div>
 
                   <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mb-3">
-                    <div>
-                      <p className="text-xs text-[#64748B] mb-1">
-                        {movimiento.tipo === 'entrada' ? 'De' : 'A'}:
-                      </p>
-                      <p className="font-medium text-[#1F2937]">
-                        {movimiento.tipo === 'entrada'
-                          ? movimiento.almacenOrigen.nombre
-                          : movimiento.almacenDestino.nombre}
-                      </p>
-                    </div>
-                    <div>
-                      <p className="text-xs text-[#64748B] mb-1">Solicitado por:</p>
-                      <p className="font-medium text-[#1F2937]">
-                        {movimiento.usuarioSolicitante.nombre}
-                      </p>
-                    </div>
+                    {(movimiento.tipo === 'ajuste_entrada' || movimiento.tipo === 'ajuste_baja') ? (
+                      <>
+                        <div>
+                          <p className="text-xs text-[#64748B] mb-1">Motivo:</p>
+                          <p className="font-medium text-[#1F2937]">
+                            {movimiento.motivo || 'Sin motivo'}
+                          </p>
+                        </div>
+                        {movimiento.proveedorResponsable && (
+                          <div>
+                            <p className="text-xs text-[#64748B] mb-1">
+                              {movimiento.tipo === 'ajuste_entrada' ? 'Proveedor:' : 'Responsable:'}
+                            </p>
+                            <p className="font-medium text-[#1F2937]">
+                              {movimiento.proveedorResponsable}
+                            </p>
+                          </div>
+                        )}
+                      </>
+                    ) : (
+                      <>
+                        <div>
+                          <p className="text-xs text-[#64748B] mb-1">
+                            {movimiento.tipo === 'entrada' ? 'De' : 'A'}:
+                          </p>
+                          <p className="font-medium text-[#1F2937]">
+                            {movimiento.tipo === 'entrada'
+                              ? movimiento.almacenOrigen?.nombre
+                              : movimiento.almacenDestino?.nombre}
+                          </p>
+                        </div>
+                        <div>
+                          <p className="text-xs text-[#64748B] mb-1">Solicitado por:</p>
+                          <p className="font-medium text-[#1F2937]">
+                            {movimiento.usuarioSolicitante?.nombre}
+                          </p>
+                        </div>
+                      </>
+                    )}
                   </div>
 
                   {movimiento.usuarioAprobador && (

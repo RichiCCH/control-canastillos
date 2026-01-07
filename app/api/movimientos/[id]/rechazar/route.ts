@@ -60,56 +60,60 @@ export async function POST(
       .where(eq(movimientosDetalle.movimientoId, parseInt(id)));
 
     // Devolver productos al inventario del almacén de origen
-    for (const detalle of detalles) {
-      const inventarioActual = await db
-        .select()
-        .from(inventario)
-        .where(
-          and(
-            eq(inventario.productoId, detalle.productoId),
-            eq(inventario.almacenId, movimiento[0].almacenOrigenId)
-          )
-        )
-        .limit(1);
-
-      if (inventarioActual.length > 0) {
-        // Restaurar inventario en almacén de origen
-        await db
-          .update(inventario)
-          .set({
-            cantidad: inventarioActual[0].cantidad + detalle.cantidad,
-            updatedAt: new Date(),
-          })
+    if (movimiento[0].almacenOrigenId !== null) {
+      for (const detalle of detalles) {
+        const inventarioActual = await db
+          .select()
+          .from(inventario)
           .where(
             and(
               eq(inventario.productoId, detalle.productoId),
               eq(inventario.almacenId, movimiento[0].almacenOrigenId)
             )
-          );
+          )
+          .limit(1);
+
+        if (inventarioActual.length > 0) {
+          // Restaurar inventario en almacén de origen
+          await db
+            .update(inventario)
+            .set({
+              cantidad: inventarioActual[0].cantidad + detalle.cantidad,
+              updatedAt: new Date(),
+            })
+            .where(
+              and(
+                eq(inventario.productoId, detalle.productoId),
+                eq(inventario.almacenId, movimiento[0].almacenOrigenId)
+              )
+            );
+        }
       }
     }
 
     // Crear notificación para el usuario solicitante
-    const almacenDestino = await db
-      .select()
-      .from(almacenes)
-      .where(eq(almacenes.id, movimiento[0].almacenDestinoId))
-      .limit(1);
+    if (movimiento[0].almacenDestinoId !== null) {
+      const almacenDestino = await db
+        .select()
+        .from(almacenes)
+        .where(eq(almacenes.id, movimiento[0].almacenDestinoId))
+        .limit(1);
 
-    const usuarioAprobador = await db
-      .select()
-      .from(users)
-      .where(eq(users.id, finalUsuarioAprobadorId))
-      .limit(1);
+      const usuarioAprobador = await db
+        .select()
+        .from(users)
+        .where(eq(users.id, finalUsuarioAprobadorId))
+        .limit(1);
 
-    if (movimiento[0].usuarioSolicitanteId && usuarioAprobador.length > 0 && almacenDestino.length > 0) {
-      await crearNotificacionMovimientoRechazado(
-        parseInt(id),
-        movimiento[0].usuarioSolicitanteId,
-        almacenDestino[0].nombre,
-        usuarioAprobador[0].nombre,
-        observaciones
-      );
+      if (movimiento[0].usuarioSolicitanteId && usuarioAprobador.length > 0 && almacenDestino.length > 0) {
+        await crearNotificacionMovimientoRechazado(
+          parseInt(id),
+          movimiento[0].usuarioSolicitanteId,
+          almacenDestino[0].nombre,
+          usuarioAprobador[0].nombre,
+          observaciones
+        );
+      }
     }
 
     return NextResponse.json({

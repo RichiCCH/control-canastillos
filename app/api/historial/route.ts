@@ -18,9 +18,11 @@ export async function GET(request: NextRequest) {
     const almacenIdNum = parseInt(almacenId);
 
     // Fetch all movements where this warehouse is either origin or destination
+    // Incluye movimientos tipo 'salida', 'entrada' (ajustes), y 'baja' (ajustes)
     const movimientosData = await db
       .select({
         id: movimientos.id,
+        tipoMovimiento: movimientos.tipoMovimiento,
         almacenOrigenId: movimientos.almacenOrigenId,
         almacenDestinoId: movimientos.almacenDestinoId,
         usuarioSolicitanteId: movimientos.usuarioSolicitanteId,
@@ -28,6 +30,8 @@ export async function GET(request: NextRequest) {
         fechaSolicitud: movimientos.fechaSolicitud,
         fechaAprobacion: movimientos.fechaAprobacion,
         estado: movimientos.estado,
+        motivo: movimientos.motivo,
+        proveedorResponsable: movimientos.proveedorResponsable,
         observaciones: movimientos.observaciones,
       })
       .from(movimientos)
@@ -42,28 +46,45 @@ export async function GET(request: NextRequest) {
     // Fetch related data for each movement
     const result = await Promise.all(
       movimientosData.map(async (mov) => {
-        // Determinar si es entrada o salida para este almacén
-        const tipo = mov.almacenDestinoId === almacenIdNum ? 'entrada' : 'salida';
+        // Determinar el tipo de movimiento
+        let tipo: string;
 
-        // Fetch almacen origen
-        const almacenOrigen = await db
-          .select({
-            id: almacenes.id,
-            nombre: almacenes.nombre,
-          })
-          .from(almacenes)
-          .where(eq(almacenes.id, mov.almacenOrigenId))
-          .limit(1);
+        if (mov.tipoMovimiento === 'entrada') {
+          tipo = 'ajuste_entrada'; // Ajuste de entrada (compra, devolución)
+        } else if (mov.tipoMovimiento === 'baja') {
+          tipo = 'ajuste_baja'; // Ajuste de baja (daño, pérdida)
+        } else {
+          // Movimiento normal tipo 'salida'
+          tipo = mov.almacenDestinoId === almacenIdNum ? 'entrada' : 'salida';
+        }
 
-        // Fetch almacen destino
-        const almacenDestino = await db
-          .select({
-            id: almacenes.id,
-            nombre: almacenes.nombre,
-          })
-          .from(almacenes)
-          .where(eq(almacenes.id, mov.almacenDestinoId))
-          .limit(1);
+        // Fetch almacen origen (si existe)
+        let almacenOrigen = null;
+        if (mov.almacenOrigenId) {
+          const almacenOrigenData = await db
+            .select({
+              id: almacenes.id,
+              nombre: almacenes.nombre,
+            })
+            .from(almacenes)
+            .where(eq(almacenes.id, mov.almacenOrigenId))
+            .limit(1);
+          almacenOrigen = almacenOrigenData[0] || null;
+        }
+
+        // Fetch almacen destino (si existe)
+        let almacenDestino = null;
+        if (mov.almacenDestinoId) {
+          const almacenDestinoData = await db
+            .select({
+              id: almacenes.id,
+              nombre: almacenes.nombre,
+            })
+            .from(almacenes)
+            .where(eq(almacenes.id, mov.almacenDestinoId))
+            .limit(1);
+          almacenDestino = almacenDestinoData[0] || null;
+        }
 
         // Fetch usuario solicitante
         let usuarioSolicitante = null;
@@ -110,13 +131,16 @@ export async function GET(request: NextRequest) {
 
         return {
           id: mov.id,
+          tipoMovimiento: mov.tipoMovimiento,
           estado: mov.estado,
+          motivo: mov.motivo,
+          proveedorResponsable: mov.proveedorResponsable,
           observaciones: mov.observaciones,
           fechaSolicitud: mov.fechaSolicitud,
           fechaAprobacion: mov.fechaAprobacion,
           tipo,
-          almacenOrigen: almacenOrigen[0] || null,
-          almacenDestino: almacenDestino[0] || null,
+          almacenOrigen,
+          almacenDestino,
           usuarioSolicitante,
           usuarioAprobador,
           detalles: detalles.map((d) => ({

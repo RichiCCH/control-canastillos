@@ -1,11 +1,16 @@
 import { NextResponse } from 'next/server';
 import { db } from '@/db';
 import { almacenes } from '@/db/schema';
+import { eq } from 'drizzle-orm';
 
-// GET - Obtener todos los almacenes
+// GET - Obtener todos los almacenes activos (para usar en formularios)
 export async function GET() {
   try {
-    const allAlmacenes = await db.select().from(almacenes);
+    const allAlmacenes = await db
+      .select()
+      .from(almacenes)
+      .where(eq(almacenes.activo, 1)); // Solo almacenes activos
+
     return NextResponse.json(allAlmacenes);
   } catch (error) {
     console.error('Error al obtener almacenes:', error);

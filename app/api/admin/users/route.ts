@@ -3,6 +3,7 @@ import { db } from '@/db';
 import { users, almacenes } from '@/db/schema';
 import { eq } from 'drizzle-orm';
 import { requirePermission, unauthorizedResponse, forbiddenResponse } from '@/lib/auth';
+import bcrypt from 'bcryptjs';
 
 // GET - Obtener todos los usuarios con información de almacén
 export async function GET(request: NextRequest) {
@@ -72,7 +73,7 @@ export async function POST(request: NextRequest) {
     await requirePermission(request, 'admin.users.create');
 
     const body = await request.json();
-    const { nombre, email, rol, almacenId } = body;
+    const { nombre, email, password, rol, almacenId } = body;
 
     if (!nombre) {
       return NextResponse.json(
@@ -104,11 +105,18 @@ export async function POST(request: NextRequest) {
       }
     }
 
+    // Hash de la contraseña si se proporciona
+    let hashedPassword = null;
+    if (password && password.trim() !== '') {
+      hashedPassword = await bcrypt.hash(password, 10);
+    }
+
     const newUser = await db
       .insert(users)
       .values({
         nombre,
         email: email || null,
+        password: hashedPassword,
         rol,
         almacenId: almacenId || null,
       })

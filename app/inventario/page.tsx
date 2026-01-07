@@ -106,15 +106,17 @@ export default function InventarioPage() {
   const almacenActual = almacenes.find(a => a.id === parseInt(almacenSeleccionado));
 
   return (
-    <div className="min-h-screen bg-[#F3F4F6]">
+    <div className="min-h-screen" style={{ backgroundColor: '#e8e8e8' }}>
       <Navigation />
-      <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 pt-24 pb-8">
+      {/* Spacer for fixed navigation */}
+      <div className="h-20"></div>
+      <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 pt-8 pb-8">
         {/* Header Section */}
-        <div className="bg-gradient-to-r from-[#1E3A8A] to-[#2563EB] rounded-2xl shadow-xl p-8 mb-8 text-white">
-          <h1 className="text-4xl font-['Montserrat'] font-bold mb-3">
+        <div className="mb-6">
+          <h1 className="text-2xl sm:text-3xl font-['Playfair_Display'] font-bold text-[#1F2937] mb-2">
             Inventario por Almacén
           </h1>
-          <p className="text-blue-100 text-lg">
+          <p className="text-sm sm:text-base text-[#64748B]">
             Consulta las existencias de productos en cada ubicación
           </p>
         </div>

@@ -59,18 +59,19 @@ export async function POST(
       .where(eq(movimientosDetalle.movimientoId, parseInt(id)));
 
     // Agregar productos al inventario del almacén destino
-    for (const detalle of detalles) {
-      // Verificar si ya existe inventario para este producto en el almacén destino
-      const inventarioExistente = await db
-        .select()
-        .from(inventario)
-        .where(
-          and(
-            eq(inventario.productoId, detalle.productoId),
-            eq(inventario.almacenId, movimiento[0].almacenDestinoId)
+    if (movimiento[0].almacenDestinoId !== null) {
+      for (const detalle of detalles) {
+        // Verificar si ya existe inventario para este producto en el almacén destino
+        const inventarioExistente = await db
+          .select()
+          .from(inventario)
+          .where(
+            and(
+              eq(inventario.productoId, detalle.productoId),
+              eq(inventario.almacenId, movimiento[0].almacenDestinoId)
+            )
           )
-        )
-        .limit(1);
+          .limit(1);
 
       if (inventarioExistente.length > 0) {
         // Actualizar inventario existente
@@ -86,38 +87,41 @@ export async function POST(
               eq(inventario.almacenId, movimiento[0].almacenDestinoId)
             )
           );
-      } else {
-        // Crear nuevo registro de inventario
-        await db
-          .insert(inventario)
-          .values({
-            productoId: detalle.productoId,
-            almacenId: movimiento[0].almacenDestinoId,
-            cantidad: detalle.cantidad,
-          });
+        } else {
+          // Crear nuevo registro de inventario
+          await db
+            .insert(inventario)
+            .values({
+              productoId: detalle.productoId,
+              almacenId: movimiento[0].almacenDestinoId,
+              cantidad: detalle.cantidad,
+            });
+        }
       }
     }
 
     // Crear notificación para el usuario solicitante
-    const almacenDestino = await db
-      .select()
-      .from(almacenes)
-      .where(eq(almacenes.id, movimiento[0].almacenDestinoId))
-      .limit(1);
+    if (movimiento[0].almacenDestinoId !== null) {
+      const almacenDestino = await db
+        .select()
+        .from(almacenes)
+        .where(eq(almacenes.id, movimiento[0].almacenDestinoId))
+        .limit(1);
 
-    const usuarioAprobador = await db
-      .select()
-      .from(users)
-      .where(eq(users.id, finalUsuarioAprobadorId))
-      .limit(1);
+      const usuarioAprobador = await db
+        .select()
+        .from(users)
+        .where(eq(users.id, finalUsuarioAprobadorId))
+        .limit(1);
 
-    if (movimiento[0].usuarioSolicitanteId && usuarioAprobador.length > 0 && almacenDestino.length > 0) {
-      await crearNotificacionMovimientoAprobado(
-        parseInt(id),
-        movimiento[0].usuarioSolicitanteId,
-        almacenDestino[0].nombre,
-        usuarioAprobador[0].nombre
-      );
+      if (movimiento[0].usuarioSolicitanteId && usuarioAprobador.length > 0 && almacenDestino.length > 0) {
+        await crearNotificacionMovimientoAprobado(
+          parseInt(id),
+          movimiento[0].usuarioSolicitanteId,
+          almacenDestino[0].nombre,
+          usuarioAprobador[0].nombre
+        );
+      }
     }
 
     return NextResponse.json({

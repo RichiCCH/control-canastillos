@@ -36,15 +36,19 @@ export async function GET(request: NextRequest) {
     // Fetch related data for each movement
     const result = await Promise.all(
       movimientosData.map(async (mov) => {
-        // Fetch almacen destino
-        const almacenDestino = await db
-          .select({
-            id: almacenes.id,
-            nombre: almacenes.nombre,
-          })
-          .from(almacenes)
-          .where(eq(almacenes.id, mov.almacenDestinoId))
-          .limit(1);
+        // Fetch almacen destino (only if exists)
+        let almacenDestino = null;
+        if (mov.almacenDestinoId !== null) {
+          const result = await db
+            .select({
+              id: almacenes.id,
+              nombre: almacenes.nombre,
+            })
+            .from(almacenes)
+            .where(eq(almacenes.id, mov.almacenDestinoId))
+            .limit(1);
+          almacenDestino = result;
+        }
 
         // Fetch usuario aprobador if exists
         let usuarioAprobador = null;
@@ -82,7 +86,7 @@ export async function GET(request: NextRequest) {
           transportadoPor: mov.transportadoPor,
           fechaSolicitud: mov.fechaSolicitud,
           fechaAprobacion: mov.fechaAprobacion,
-          almacenDestino: almacenDestino[0] || null,
+          almacenDestino: almacenDestino ? almacenDestino[0] || null : null,
           usuarioAprobador,
           detalles: detalles.map((d) => ({
             id: d.id,

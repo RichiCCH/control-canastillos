@@ -6,64 +6,40 @@ import Navigation from '@/components/navigation';
 interface Almacen {
   id: number;
   nombre: string;
-}
-
-interface User {
-  id: number;
-  nombre: string;
-  email: string | null;
-  rol: 'admin' | 'supervisor' | 'operador';
+  ubicacion: string | null;
+  descripcion: string | null;
   activo: number;
-  almacenId: number | null;
-  almacen?: {
-    id: number;
-    nombre: string;
-  } | null;
+  usuariosAsignados?: number;
   createdAt: string;
-  updatedAt: string;
 }
 
-export default function AdminUsuariosPage() {
-  const [users, setUsers] = useState<User[]>([]);
+export default function AdminAlmacenesPage() {
   const [almacenes, setAlmacenes] = useState<Almacen[]>([]);
   const [loading, setLoading] = useState(true);
   const [showModal, setShowModal] = useState(false);
-  const [editingUser, setEditingUser] = useState<User | null>(null);
+  const [editingAlmacen, setEditingAlmacen] = useState<Almacen | null>(null);
   const [message, setMessage] = useState<{ type: 'success' | 'error'; text: string } | null>(null);
 
   const [formData, setFormData] = useState({
     nombre: '',
-    email: '',
-    password: '',
-    rol: 'operador' as 'admin' | 'supervisor' | 'operador',
-    almacenId: '',
+    ubicacion: '',
+    descripcion: '',
   });
 
   useEffect(() => {
-    fetchUsers();
     fetchAlmacenes();
   }, []);
 
-  const fetchUsers = async () => {
-    try {
-      const response = await fetch('/api/admin/users');
-      const data = await response.json();
-      setUsers(data);
-    } catch (error) {
-      console.error('Error al cargar usuarios:', error);
-      showMessage('Error al cargar usuarios', 'error');
-    } finally {
-      setLoading(false);
-    }
-  };
-
   const fetchAlmacenes = async () => {
     try {
-      const response = await fetch('/api/almacenes');
+      const response = await fetch('/api/admin/almacenes');
       const data = await response.json();
       setAlmacenes(data);
     } catch (error) {
       console.error('Error al cargar almacenes:', error);
+      showMessage('Error al cargar almacenes', 'error');
+    } finally {
+      setLoading(false);
     }
   };
 
@@ -72,24 +48,20 @@ export default function AdminUsuariosPage() {
     setTimeout(() => setMessage(null), 5000);
   };
 
-  const handleOpenModal = (user?: User) => {
-    if (user) {
-      setEditingUser(user);
+  const handleOpenModal = (almacen?: Almacen) => {
+    if (almacen) {
+      setEditingAlmacen(almacen);
       setFormData({
-        nombre: user.nombre,
-        email: user.email || '',
-        password: '',
-        rol: user.rol,
-        almacenId: user.almacenId?.toString() || '',
+        nombre: almacen.nombre,
+        ubicacion: almacen.ubicacion || '',
+        descripcion: almacen.descripcion || '',
       });
     } else {
-      setEditingUser(null);
+      setEditingAlmacen(null);
       setFormData({
         nombre: '',
-        email: '',
-        password: '',
-        rol: 'operador',
-        almacenId: '',
+        ubicacion: '',
+        descripcion: '',
       });
     }
     setShowModal(true);
@@ -97,90 +69,78 @@ export default function AdminUsuariosPage() {
 
   const handleCloseModal = () => {
     setShowModal(false);
-    setEditingUser(null);
+    setEditingAlmacen(null);
   };
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
 
     try {
-      const url = editingUser
-        ? `/api/admin/users/${editingUser.id}`
-        : '/api/admin/users';
-      const method = editingUser ? 'PATCH' : 'POST';
-
-      // Preparar el body
-      const bodyData: any = {
-        nombre: formData.nombre,
-        email: formData.email || null,
-        rol: formData.rol,
-        almacenId: formData.almacenId ? parseInt(formData.almacenId) : null,
-      };
-
-      // Solo incluir password si se proporcionó
-      if (formData.password && formData.password.trim() !== '') {
-        bodyData.password = formData.password;
-      }
+      const url = editingAlmacen
+        ? `/api/admin/almacenes/${editingAlmacen.id}`
+        : '/api/admin/almacenes';
+      const method = editingAlmacen ? 'PATCH' : 'POST';
 
       const response = await fetch(url, {
         method,
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(bodyData),
+        body: JSON.stringify({
+          nombre: formData.nombre,
+          ubicacion: formData.ubicacion || null,
+          descripcion: formData.descripcion || null,
+        }),
       });
 
       const data = await response.json();
 
       if (!response.ok) {
-        throw new Error(data.error || 'Error al guardar usuario');
+        throw new Error(data.error || 'Error al guardar almacén');
       }
 
       showMessage(
-        editingUser ? 'Usuario actualizado exitosamente' : 'Usuario creado exitosamente',
+        editingAlmacen ? 'Almacén actualizado exitosamente' : 'Almacén creado exitosamente',
         'success'
       );
       handleCloseModal();
-      fetchUsers();
+      fetchAlmacenes();
     } catch (error) {
       const errorMessage = error instanceof Error ? error.message : 'Error desconocido';
       showMessage(errorMessage, 'error');
     }
   };
 
-  const handleToggleActivo = async (user: User) => {
+  const handleToggleActivo = async (almacen: Almacen) => {
+    // Confirmar si hay usuarios asignados
+    if (almacen.activo === 1 && almacen.usuariosAsignados && almacen.usuariosAsignados > 0) {
+      if (!confirm(`Este almacén tiene ${almacen.usuariosAsignados} usuario(s) asignado(s). ¿Estás seguro de que quieres desactivarlo?`)) {
+        return;
+      }
+    }
+
     try {
-      const response = await fetch(`/api/admin/users/${user.id}`, {
+      const response = await fetch(`/api/admin/almacenes/${almacen.id}`, {
         method: 'PATCH',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
-          activo: user.activo === 1 ? 0 : 1,
+          activo: almacen.activo === 1 ? 0 : 1,
         }),
       });
 
+      const data = await response.json();
+
       if (!response.ok) {
-        throw new Error('Error al cambiar estado del usuario');
+        throw new Error(data.error || 'Error al cambiar estado del almacén');
       }
 
       showMessage(
-        user.activo === 1 ? 'Usuario desactivado' : 'Usuario activado',
+        almacen.activo === 1 ? 'Almacén desactivado' : 'Almacén activado',
         'success'
       );
-      fetchUsers();
+      fetchAlmacenes();
     } catch (error) {
-      showMessage('Error al cambiar estado del usuario', 'error');
+      const errorMessage = error instanceof Error ? error.message : 'Error desconocido';
+      showMessage(errorMessage, 'error');
     }
-  };
-
-  const getRolBadge = (rol: string) => {
-    const colors: Record<string, string> = {
-      admin: 'bg-red-100 text-red-800',
-      supervisor: 'bg-blue-100 text-blue-800',
-      operador: 'bg-green-100 text-green-800',
-    };
-    return (
-      <span className={`px-2 py-1 rounded text-xs font-semibold ${colors[rol]}`}>
-        {rol.toUpperCase()}
-      </span>
-    );
   };
 
   if (loading) {
@@ -193,13 +153,15 @@ export default function AdminUsuariosPage() {
           <div className="card bg-white">
             <div className="flex items-center justify-center py-12">
               <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-[#2563EB]"></div>
-              <p className="ml-4 text-[#64748B]">Cargando usuarios...</p>
+              <p className="ml-4 text-[#64748B]">Cargando almacenes...</p>
             </div>
           </div>
         </div>
       </div>
     );
   }
+
+  const totalUsuariosAsignados = almacenes.reduce((sum, a) => sum + (a.usuariosAsignados || 0), 0);
 
   return (
     <div className="min-h-screen" style={{ backgroundColor: '#e8e8e8' }}>
@@ -211,10 +173,10 @@ export default function AdminUsuariosPage() {
         <div className="mb-6 flex justify-between items-center">
           <div>
             <h1 className="text-2xl sm:text-3xl font-['Playfair_Display'] font-bold text-[#1F2937] mb-2">
-              Administración de Usuarios
+              Administración de Almacenes
             </h1>
             <p className="text-sm sm:text-base text-[#64748B]">
-              Gestiona usuarios, roles y permisos del sistema
+              Gestiona almacenes y ubicaciones del sistema
             </p>
           </div>
           <button
@@ -224,7 +186,7 @@ export default function AdminUsuariosPage() {
             <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
               <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4v16m8-8H4" />
             </svg>
-            Nuevo Usuario
+            Nuevo Almacén
           </button>
         </div>
 
@@ -244,46 +206,46 @@ export default function AdminUsuariosPage() {
         {/* Stats Cards */}
         <div className="grid grid-cols-1 md:grid-cols-4 gap-6 mb-8">
           <div className="card bg-white">
-            <div className="text-[#64748B] text-sm font-medium mb-1">Total Usuarios</div>
-            <div className="text-3xl font-bold text-[#1F2937]">{users.length}</div>
+            <div className="text-[#64748B] text-sm font-medium mb-1">Total Almacenes</div>
+            <div className="text-3xl font-bold text-[#1F2937]">{almacenes.length}</div>
           </div>
           <div className="card bg-white">
-            <div className="text-[#64748B] text-sm font-medium mb-1">Administradores</div>
-            <div className="text-3xl font-bold text-red-600">
-              {users.filter((u) => u.rol === 'admin').length}
-            </div>
-          </div>
-          <div className="card bg-white">
-            <div className="text-[#64748B] text-sm font-medium mb-1">Supervisores</div>
-            <div className="text-3xl font-bold text-blue-600">
-              {users.filter((u) => u.rol === 'supervisor').length}
-            </div>
-          </div>
-          <div className="card bg-white">
-            <div className="text-[#64748B] text-sm font-medium mb-1">Activos</div>
+            <div className="text-[#64748B] text-sm font-medium mb-1">Almacenes Activos</div>
             <div className="text-3xl font-bold text-green-600">
-              {users.filter((u) => u.activo === 1).length}
+              {almacenes.filter((a) => a.activo === 1).length}
+            </div>
+          </div>
+          <div className="card bg-white">
+            <div className="text-[#64748B] text-sm font-medium mb-1">Almacenes Inactivos</div>
+            <div className="text-3xl font-bold text-gray-600">
+              {almacenes.filter((a) => a.activo === 0).length}
+            </div>
+          </div>
+          <div className="card bg-white">
+            <div className="text-[#64748B] text-sm font-medium mb-1">Usuarios Asignados</div>
+            <div className="text-3xl font-bold text-blue-600">
+              {totalUsuariosAsignados}
             </div>
           </div>
         </div>
 
-        {/* Users Table */}
+        {/* Almacenes Table */}
         <div className="card bg-white overflow-hidden">
           <div className="overflow-x-auto">
             <table className="min-w-full divide-y divide-gray-200">
               <thead className="bg-gray-50">
                 <tr>
                   <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                    Usuario
-                  </th>
-                  <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                    Email
-                  </th>
-                  <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                    Rol
-                  </th>
-                  <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
                     Almacén
+                  </th>
+                  <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                    Ubicación
+                  </th>
+                  <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                    Descripción
+                  </th>
+                  <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                    Usuarios
                   </th>
                   <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
                     Estado
@@ -294,50 +256,58 @@ export default function AdminUsuariosPage() {
                 </tr>
               </thead>
               <tbody className="bg-white divide-y divide-gray-200">
-                {users.map((user) => (
-                  <tr key={user.id} className={user.activo === 0 ? 'bg-gray-50 opacity-60' : ''}>
+                {almacenes.map((almacen) => (
+                  <tr key={almacen.id} className={almacen.activo === 0 ? 'bg-gray-50 opacity-60' : ''}>
                     <td className="px-6 py-4 whitespace-nowrap">
-                      <div className="text-sm font-medium text-gray-900">{user.nombre}</div>
-                      <div className="text-sm text-gray-500">ID: {user.id}</div>
+                      <div className="text-sm font-medium text-gray-900">{almacen.nombre}</div>
+                      <div className="text-sm text-gray-500">ID: {almacen.id}</div>
                     </td>
-                    <td className="px-6 py-4 whitespace-nowrap">
-                      <div className="text-sm text-gray-900">{user.email || '-'}</div>
-                    </td>
-                    <td className="px-6 py-4 whitespace-nowrap">{getRolBadge(user.rol)}</td>
                     <td className="px-6 py-4 whitespace-nowrap">
                       <div className="text-sm text-gray-900">
-                        {user.almacen?.nombre || (
-                          <span className="text-gray-400 italic">Sin asignar</span>
+                        {almacen.ubicacion || (
+                          <span className="text-gray-400 italic">Sin ubicación</span>
                         )}
+                      </div>
+                    </td>
+                    <td className="px-6 py-4">
+                      <div className="text-sm text-gray-900 max-w-xs truncate">
+                        {almacen.descripcion || (
+                          <span className="text-gray-400 italic">Sin descripción</span>
+                        )}
+                      </div>
+                    </td>
+                    <td className="px-6 py-4 whitespace-nowrap">
+                      <div className="text-sm text-gray-900">
+                        {almacen.usuariosAsignados || 0}
                       </div>
                     </td>
                     <td className="px-6 py-4 whitespace-nowrap">
                       <span
                         className={`px-2 py-1 rounded text-xs font-semibold ${
-                          user.activo === 1
+                          almacen.activo === 1
                             ? 'bg-green-100 text-green-800'
                             : 'bg-gray-100 text-gray-800'
                         }`}
                       >
-                        {user.activo === 1 ? 'ACTIVO' : 'INACTIVO'}
+                        {almacen.activo === 1 ? 'ACTIVO' : 'INACTIVO'}
                       </span>
                     </td>
                     <td className="px-6 py-4 whitespace-nowrap text-sm font-medium">
                       <button
-                        onClick={() => handleOpenModal(user)}
+                        onClick={() => handleOpenModal(almacen)}
                         className="text-[#2563EB] hover:text-[#1E40AF] mr-4"
                       >
                         Editar
                       </button>
                       <button
-                        onClick={() => handleToggleActivo(user)}
+                        onClick={() => handleToggleActivo(almacen)}
                         className={
-                          user.activo === 1
+                          almacen.activo === 1
                             ? 'text-red-600 hover:text-red-800'
                             : 'text-green-600 hover:text-green-800'
                         }
                       >
-                        {user.activo === 1 ? 'Desactivar' : 'Activar'}
+                        {almacen.activo === 1 ? 'Desactivar' : 'Activar'}
                       </button>
                     </td>
                   </tr>
@@ -352,7 +322,7 @@ export default function AdminUsuariosPage() {
           <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4">
             <div className="bg-white rounded-lg max-w-md w-full p-6">
               <h2 className="text-2xl font-bold mb-4">
-                {editingUser ? 'Editar Usuario' : 'Nuevo Usuario'}
+                {editingAlmacen ? 'Editar Almacén' : 'Nuevo Almacén'}
               </h2>
 
               <form onSubmit={handleSubmit}>
@@ -371,67 +341,28 @@ export default function AdminUsuariosPage() {
 
                 <div className="mb-4">
                   <label className="block text-sm font-medium text-gray-700 mb-2">
-                    Email
+                    Ubicación
                   </label>
                   <input
-                    type="email"
-                    value={formData.email}
-                    onChange={(e) => setFormData({ ...formData, email: e.target.value })}
+                    type="text"
+                    value={formData.ubicacion}
+                    onChange={(e) => setFormData({ ...formData, ubicacion: e.target.value })}
+                    placeholder="Ej: Edificio A, Piso 2"
                     className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
                   />
-                </div>
-
-                <div className="mb-4">
-                  <label className="block text-sm font-medium text-gray-700 mb-2">
-                    Contraseña {editingUser ? '(dejar vacío para no cambiar)' : '*'}
-                  </label>
-                  <input
-                    type="password"
-                    value={formData.password}
-                    onChange={(e) => setFormData({ ...formData, password: e.target.value })}
-                    required={!editingUser}
-                    placeholder={editingUser ? 'Ingresa nueva contraseña (opcional)' : 'Ingresa contraseña'}
-                    className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
-                  />
-                </div>
-
-                <div className="mb-4">
-                  <label className="block text-sm font-medium text-gray-700 mb-2">
-                    Rol *
-                  </label>
-                  <select
-                    value={formData.rol}
-                    onChange={(e) =>
-                      setFormData({
-                        ...formData,
-                        rol: e.target.value as 'admin' | 'supervisor' | 'operador',
-                      })
-                    }
-                    required
-                    className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
-                  >
-                    <option value="operador">Operador</option>
-                    <option value="supervisor">Supervisor</option>
-                    <option value="admin">Administrador</option>
-                  </select>
                 </div>
 
                 <div className="mb-6">
                   <label className="block text-sm font-medium text-gray-700 mb-2">
-                    Almacén
+                    Descripción
                   </label>
-                  <select
-                    value={formData.almacenId}
-                    onChange={(e) => setFormData({ ...formData, almacenId: e.target.value })}
+                  <textarea
+                    value={formData.descripcion}
+                    onChange={(e) => setFormData({ ...formData, descripcion: e.target.value })}
+                    rows={3}
+                    placeholder="Información adicional sobre el almacén..."
                     className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
-                  >
-                    <option value="">Sin asignar</option>
-                    {almacenes.map((almacen) => (
-                      <option key={almacen.id} value={almacen.id}>
-                        {almacen.nombre}
-                      </option>
-                    ))}
-                  </select>
+                  />
                 </div>
 
                 <div className="flex gap-3">
@@ -446,7 +377,7 @@ export default function AdminUsuariosPage() {
                     type="submit"
                     className="flex-1 px-4 py-2 bg-[#2563EB] text-white rounded-lg hover:bg-[#1E40AF]"
                   >
-                    {editingUser ? 'Actualizar' : 'Crear'}
+                    {editingAlmacen ? 'Actualizar' : 'Crear'}
                   </button>
                 </div>
               </form>

@@ -64,13 +64,15 @@ export default function Home() {
   return (
     <div className="min-h-screen" style={{ backgroundColor: '#e8e8e8' }}>
       <Navigation />
-      <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 pt-28 pb-8">
-        {/* Hero Section */}
-        <div className="bg-gradient-to-r from-[#1E3A8A] to-[#2563EB] rounded-2xl shadow-xl p-8 mb-8 text-white">
-          <h1 className="text-4xl font-['Playfair_Display'] font-bold mb-3">
+      {/* Spacer for fixed navigation */}
+      <div className="h-20"></div>
+      <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 pt-8 pb-8">
+        {/* Header Section */}
+        <div className="mb-6">
+          <h1 className="text-2xl sm:text-3xl font-['Playfair_Display'] font-bold text-[#1F2937] mb-2">
             {stats?.role === 'admin' ? 'Panel de Control Global' : `Mi Almacén - ${(session?.user as any)?.almacenNombre || ''}`}
           </h1>
-          <p className="text-blue-100 text-lg">
+          <p className="text-sm sm:text-base text-[#64748B]">
             {stats?.role === 'admin'
               ? 'Control profesional de todo el sistema de inventarios'
               : 'Control de tu almacén y movimientos de inventario'

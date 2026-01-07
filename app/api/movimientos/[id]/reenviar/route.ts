@@ -57,23 +57,25 @@ export async function POST(
     }
 
     // Validar inventario disponible en almacén de origen
-    for (const detalle of detalles) {
-      const inventarioActual = await db
-        .select()
-        .from(inventario)
-        .where(
-          and(
-            eq(inventario.productoId, detalle.productoId),
-            eq(inventario.almacenId, movimiento[0].almacenOrigenId)
+    if (movimiento[0].almacenOrigenId !== null) {
+      for (const detalle of detalles) {
+        const inventarioActual = await db
+          .select()
+          .from(inventario)
+          .where(
+            and(
+              eq(inventario.productoId, detalle.productoId),
+              eq(inventario.almacenId, movimiento[0].almacenOrigenId)
+            )
           )
-        )
-        .limit(1);
+          .limit(1);
 
-      if (inventarioActual.length === 0 || inventarioActual[0].cantidad < detalle.cantidad) {
-        return NextResponse.json(
-          { error: `No hay suficiente inventario para el producto ID ${detalle.productoId}` },
-          { status: 400 }
-        );
+        if (inventarioActual.length === 0 || inventarioActual[0].cantidad < detalle.cantidad) {
+          return NextResponse.json(
+            { error: `No hay suficiente inventario para el producto ID ${detalle.productoId}` },
+            { status: 400 }
+          );
+        }
       }
     }
 
@@ -93,31 +95,33 @@ export async function POST(
     }
 
     // Descontar del inventario del almacén de origen
-    for (const detalle of detalles) {
-      const inventarioActual = await db
-        .select()
-        .from(inventario)
-        .where(
-          and(
-            eq(inventario.productoId, detalle.productoId),
-            eq(inventario.almacenId, movimiento[0].almacenOrigenId)
-          )
-        )
-        .limit(1);
-
-      if (inventarioActual.length > 0) {
-        await db
-          .update(inventario)
-          .set({
-            cantidad: inventarioActual[0].cantidad - detalle.cantidad,
-            updatedAt: new Date(),
-          })
+    if (movimiento[0].almacenOrigenId !== null) {
+      for (const detalle of detalles) {
+        const inventarioActual = await db
+          .select()
+          .from(inventario)
           .where(
             and(
               eq(inventario.productoId, detalle.productoId),
               eq(inventario.almacenId, movimiento[0].almacenOrigenId)
             )
-          );
+          )
+          .limit(1);
+
+        if (inventarioActual.length > 0) {
+          await db
+            .update(inventario)
+            .set({
+              cantidad: inventarioActual[0].cantidad - detalle.cantidad,
+              updatedAt: new Date(),
+            })
+            .where(
+              and(
+                eq(inventario.productoId, detalle.productoId),
+                eq(inventario.almacenId, movimiento[0].almacenOrigenId)
+              )
+            );
+        }
       }
     }
 
@@ -135,31 +139,33 @@ export async function POST(
       .where(eq(movimientos.id, parseInt(id)));
 
     // Crear notificación para usuarios del almacén destino
-    const almacenDestino = await db
-      .select()
-      .from(almacenes)
-      .where(eq(almacenes.id, movimiento[0].almacenDestinoId))
-      .limit(1);
+    if (movimiento[0].almacenDestinoId !== null) {
+      const almacenDestino = await db
+        .select()
+        .from(almacenes)
+        .where(eq(almacenes.id, movimiento[0].almacenDestinoId))
+        .limit(1);
 
-    const usuariosDestino = await db
-      .select()
-      .from(users)
-      .where(eq(users.almacenId, movimiento[0].almacenDestinoId));
+      const usuariosDestino = await db
+        .select()
+        .from(users)
+        .where(eq(users.almacenId, movimiento[0].almacenDestinoId));
 
-    const usuarioSolicitante = await db
-      .select()
-      .from(users)
-      .where(eq(users.id, authUser.id))
-      .limit(1);
+      const usuarioSolicitante = await db
+        .select()
+        .from(users)
+        .where(eq(users.id, authUser.id))
+        .limit(1);
 
-    if (usuarioSolicitante.length > 0 && almacenDestino.length > 0) {
-      for (const usuario of usuariosDestino) {
-        await crearNotificacionNuevoMovimiento(
-          parseInt(id),
-          usuario.id,
-          almacenDestino[0].nombre,
-          usuarioSolicitante[0].nombre
-        );
+      if (usuarioSolicitante.length > 0 && almacenDestino.length > 0) {
+        for (const usuario of usuariosDestino) {
+          await crearNotificacionNuevoMovimiento(
+            parseInt(id),
+            usuario.id,
+            almacenDestino[0].nombre,
+            usuarioSolicitante[0].nombre
+          );
+        }
       }
     }
 

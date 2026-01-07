@@ -49,7 +49,7 @@ export async function POST(
     }
 
     // Si el movimiento está pendiente, devolver productos al inventario del almacén de origen
-    if (movimiento[0].estado === 'pendiente') {
+    if (movimiento[0].estado === 'pendiente' && movimiento[0].almacenOrigenId !== null) {
       const detalles = await db
         .select()
         .from(movimientosDetalle)
@@ -95,7 +95,7 @@ export async function POST(
       .where(eq(movimientos.id, parseInt(id)));
 
     // Crear notificación para el aprobador si existe
-    if (movimiento[0].usuarioAprobadorId) {
+    if (movimiento[0].usuarioAprobadorId && movimiento[0].almacenDestinoId !== null) {
       const almacenDestino = await db
         .select()
         .from(almacenes)

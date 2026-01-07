@@ -3,6 +3,7 @@ import { db } from '@/db';
 import { users } from '@/db/schema';
 import { eq } from 'drizzle-orm';
 import { requirePermission, unauthorizedResponse, forbiddenResponse } from '@/lib/auth';
+import bcrypt from 'bcryptjs';
 
 export const dynamic = 'force-dynamic';
 
@@ -18,7 +19,7 @@ export async function PATCH(
     const { id } = await params;
     const userId = parseInt(id);
     const body = await request.json();
-    const { nombre, email, rol, almacenId, activo } = body;
+    const { nombre, email, password, rol, almacenId, activo } = body;
 
     // Verificar que el usuario existe
     const existingUser = await db
@@ -64,6 +65,11 @@ export async function PATCH(
     if (email !== undefined) updateData.email = email || null;
     if (rol !== undefined) updateData.rol = rol;
     if (almacenId !== undefined) updateData.almacenId = almacenId || null;
+
+    // Hash de la contraseña si se proporciona
+    if (password && password.trim() !== '') {
+      updateData.password = await bcrypt.hash(password, 10);
+    }
 
     const updatedUser = await db
       .update(users)

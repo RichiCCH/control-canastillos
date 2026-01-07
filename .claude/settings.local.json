@@ -48,7 +48,10 @@
       "Bash(vercel link:*)",
       "Bash(vercel --prod:*)",
       "Bash(vercel logs:*)",
-      "Bash(cmd.exe /c \"taskkill /F /PID 7096\")"
+      "Bash(cmd.exe /c \"taskkill /F /PID 7096\")",
+      "Bash(npx drizzle-kit generate)",
+      "Bash(npx drizzle-kit:*)",
+      "Bash(done)"
     ]
   }
 }

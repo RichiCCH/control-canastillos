@@ -9,6 +9,13 @@ export const tipoProductoEnum = pgEnum('tipo_producto', [
   'caja'
 ]);
 
+// Enum para el tipo de movimiento
+export const tipoMovimientoEnum = pgEnum('tipo_movimiento', [
+  'salida',    // Movimiento normal entre almacenes
+  'entrada',   // Compra, devolución, ajuste de entrada
+  'baja'       // Baja por daño, pérdida, merma
+]);
+
 // Enum para el estado de los movimientos/solicitudes
 export const estadoMovimientoEnum = pgEnum('estado_movimiento', [
   'pendiente',
@@ -30,6 +37,7 @@ export const almacenes = pgTable('almacenes', {
   nombre: varchar('nombre', { length: 100 }).notNull().unique(),
   ubicacion: varchar('ubicacion', { length: 255 }),
   descripcion: text('descripcion'),
+  activo: integer('activo').default(1).notNull(), // 1 = activo, 0 = inactivo
   createdAt: timestamp('created_at').defaultNow().notNull(),
 });
 
@@ -70,11 +78,14 @@ export const inventario = pgTable('inventario', {
 // Tabla de movimientos (cabecera del movimiento)
 export const movimientos = pgTable('movimientos', {
   id: serial('id').primaryKey(),
-  almacenOrigenId: integer('almacen_origen_id').references(() => almacenes.id).notNull(),
-  almacenDestinoId: integer('almacen_destino_id').references(() => almacenes.id).notNull(),
+  tipoMovimiento: tipoMovimientoEnum('tipo_movimiento').default('salida').notNull(),
+  almacenOrigenId: integer('almacen_origen_id').references(() => almacenes.id),
+  almacenDestinoId: integer('almacen_destino_id').references(() => almacenes.id),
   usuarioSolicitanteId: integer('usuario_solicitante_id').references(() => users.id),
   usuarioAprobadorId: integer('usuario_aprobador_id').references(() => users.id),
   estado: estadoMovimientoEnum('estado').default('pendiente').notNull(),
+  motivo: varchar('motivo', { length: 100 }), // Para ajustes: "Compra", "Baja por daño", etc.
+  proveedorResponsable: varchar('proveedor_responsable', { length: 255 }), // Opcional
   observaciones: text('observaciones'),
   transportadoPor: varchar('transportado_por', { length: 255 }),
   fechaSolicitud: timestamp('fecha_solicitud').defaultNow().notNull(),

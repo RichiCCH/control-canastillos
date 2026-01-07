@@ -54,66 +54,68 @@ export async function PATCH(
     const almacenOrigenId = movimiento[0].almacenOrigenId;
 
     // For each detail, restore old inventory and apply new quantity
-    for (const detalle of detalles) {
-      // Get current detail
-      const currentDetail = await db
-        .select()
-        .from(movimientosDetalle)
-        .where(eq(movimientosDetalle.id, detalle.id))
-        .limit(1);
-
-      if (currentDetail.length === 0) continue;
-
-      const oldCantidad = currentDetail[0].cantidad;
-      const newCantidad = detalle.cantidad;
-      const productoId = currentDetail[0].productoId;
-
-      if (oldCantidad !== newCantidad) {
-        // Get current inventory
-        const inventarioActual = await db
+    if (almacenOrigenId !== null) {
+      for (const detalle of detalles) {
+        // Get current detail
+        const currentDetail = await db
           .select()
-          .from(inventario)
-          .where(
-            and(
-              eq(inventario.productoId, productoId),
-              eq(inventario.almacenId, almacenOrigenId)
-            )
-          )
+          .from(movimientosDetalle)
+          .where(eq(movimientosDetalle.id, detalle.id))
           .limit(1);
 
-        if (inventarioActual.length > 0) {
-          // Restore old quantity and subtract new quantity
-          const adjustedCantidad = inventarioActual[0].cantidad + oldCantidad - newCantidad;
+        if (currentDetail.length === 0) continue;
 
-          if (adjustedCantidad < 0) {
-            return NextResponse.json(
-              { error: `Stock insuficiente para producto ID ${productoId}` },
-              { status: 400 }
-            );
-          }
+        const oldCantidad = currentDetail[0].cantidad;
+        const newCantidad = detalle.cantidad;
+        const productoId = currentDetail[0].productoId;
 
-          // Update inventory
-          await db
-            .update(inventario)
-            .set({
-              cantidad: adjustedCantidad,
-              updatedAt: new Date(),
-            })
+        if (oldCantidad !== newCantidad) {
+          // Get current inventory
+          const inventarioActual = await db
+            .select()
+            .from(inventario)
             .where(
               and(
                 eq(inventario.productoId, productoId),
                 eq(inventario.almacenId, almacenOrigenId)
               )
-            );
-        }
+            )
+            .limit(1);
 
-        // Update movement detail
-        await db
-          .update(movimientosDetalle)
-          .set({
-            cantidad: newCantidad,
-          })
-          .where(eq(movimientosDetalle.id, detalle.id));
+          if (inventarioActual.length > 0) {
+            // Restore old quantity and subtract new quantity
+            const adjustedCantidad = inventarioActual[0].cantidad + oldCantidad - newCantidad;
+
+            if (adjustedCantidad < 0) {
+              return NextResponse.json(
+                { error: `Stock insuficiente para producto ID ${productoId}` },
+                { status: 400 }
+              );
+            }
+
+            // Update inventory
+            await db
+              .update(inventario)
+              .set({
+                cantidad: adjustedCantidad,
+                updatedAt: new Date(),
+              })
+              .where(
+                and(
+                  eq(inventario.productoId, productoId),
+                  eq(inventario.almacenId, almacenOrigenId)
+                )
+              );
+          }
+
+          // Update movement detail
+          await db
+            .update(movimientosDetalle)
+            .set({
+              cantidad: newCantidad,
+            })
+            .where(eq(movimientosDetalle.id, detalle.id));
+        }
       }
     }
 
@@ -187,32 +189,34 @@ export async function DELETE(
       .where(eq(movimientosDetalle.movimientoId, movimientoId));
 
     // Restore inventory for each product
-    for (const detalle of detalles) {
-      const inventarioActual = await db
-        .select()
-        .from(inventario)
-        .where(
-          and(
-            eq(inventario.productoId, detalle.productoId),
-            eq(inventario.almacenId, almacenOrigenId)
-          )
-        )
-        .limit(1);
-
-      if (inventarioActual.length > 0) {
-        // Restore the quantity
-        await db
-          .update(inventario)
-          .set({
-            cantidad: inventarioActual[0].cantidad + detalle.cantidad,
-            updatedAt: new Date(),
-          })
+    if (almacenOrigenId !== null) {
+      for (const detalle of detalles) {
+        const inventarioActual = await db
+          .select()
+          .from(inventario)
           .where(
             and(
               eq(inventario.productoId, detalle.productoId),
               eq(inventario.almacenId, almacenOrigenId)
             )
-          );
+          )
+          .limit(1);
+
+        if (inventarioActual.length > 0) {
+          // Restore the quantity
+          await db
+            .update(inventario)
+            .set({
+              cantidad: inventarioActual[0].cantidad + detalle.cantidad,
+              updatedAt: new Date(),
+            })
+            .where(
+              and(
+                eq(inventario.productoId, detalle.productoId),
+                eq(inventario.almacenId, almacenOrigenId)
+              )
+            );
+        }
       }
     }
 
