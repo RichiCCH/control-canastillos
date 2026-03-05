@@ -179,11 +179,9 @@ export default function AdminProductosPage() {
 
   if (loading) {
     return (
-      <div className="min-h-screen" style={{ backgroundColor: '#e8e8e8' }}>
+      <div className="main-content" style={{ background: "var(--bg)" }}>
         <Navigation />
-        {/* Spacer for fixed navigation */}
-        <div className="h-20"></div>
-        <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 pt-8 pb-8">
+        <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 pt-8 pb-24 lg:pb-8">
           <div className="card bg-white">
             <div className="flex items-center justify-center py-12">
               <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-[#2563EB]"></div>
@@ -196,13 +194,11 @@ export default function AdminProductosPage() {
   }
 
   return (
-    <div className="min-h-screen" style={{ backgroundColor: '#e8e8e8' }}>
+    <div className="main-content" style={{ background: "var(--bg)" }}>
       <Navigation />
-      {/* Spacer for fixed navigation */}
-      <div className="h-20"></div>
-      <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 pt-8 pb-8">
+      <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 pt-8 pb-24 lg:pb-8">
         {/* Header Section */}
-        <div className="mb-6 flex justify-between items-center">
+        <div className="mb-6 flex flex-col sm:flex-row sm:justify-between sm:items-center gap-4">
           <div>
             <h1 className="text-2xl sm:text-3xl font-['Playfair_Display'] font-bold text-[#1F2937] mb-2">
               Administración de Productos
@@ -213,7 +209,7 @@ export default function AdminProductosPage() {
           </div>
           <button
             onClick={() => handleOpenModal()}
-            className="bg-[#2563EB] text-white px-6 py-3 rounded-lg font-semibold hover:bg-[#1E40AF] transition-colors flex items-center gap-2"
+            className="bg-[#2563EB] text-white px-6 py-3 rounded-lg font-semibold hover:bg-[#1E40AF] transition-colors flex items-center justify-center gap-2 w-full sm:w-auto"
           >
             <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
               <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4v16m8-8H4" />
@@ -267,25 +263,22 @@ export default function AdminProductosPage() {
             <table className="min-w-full divide-y divide-gray-200">
               <thead className="bg-gray-50">
                 <tr>
-                  <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                    Código
-                  </th>
-                  <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                  <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
                     Producto
                   </th>
-                  <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                  <th className="hidden sm:table-cell px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
                     Tipo
                   </th>
-                  <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                  <th className="hidden md:table-cell px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
                     Unidad
                   </th>
-                  <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                    Stock Mínimo
+                  <th className="hidden md:table-cell px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                    Stock Mín.
                   </th>
-                  <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                  <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
                     Estado
                   </th>
-                  <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                  <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
                     Acciones
                   </th>
                 </tr>
@@ -293,23 +286,21 @@ export default function AdminProductosPage() {
               <tbody className="bg-white divide-y divide-gray-200">
                 {productos.map((producto) => (
                   <tr key={producto.id} className={producto.activo === 0 ? 'bg-gray-50 opacity-60' : ''}>
-                    <td className="px-6 py-4 whitespace-nowrap">
-                      <div className="text-sm font-medium text-gray-900">{producto.codigo}</div>
-                    </td>
-                    <td className="px-6 py-4 whitespace-nowrap">
+                    <td className="px-4 py-3 whitespace-nowrap">
                       <div className="text-sm font-medium text-gray-900">{producto.nombre}</div>
-                      <div className="text-sm text-gray-500">ID: {producto.id}</div>
+                      <div className="text-xs text-gray-500">{producto.codigo}</div>
+                      <div className="sm:hidden">{getTipoBadge(producto.tipo)}</div>
                     </td>
-                    <td className="px-6 py-4 whitespace-nowrap">
+                    <td className="hidden sm:table-cell px-4 py-3 whitespace-nowrap">
                       {getTipoBadge(producto.tipo)}
                     </td>
-                    <td className="px-6 py-4 whitespace-nowrap">
+                    <td className="hidden md:table-cell px-4 py-3 whitespace-nowrap">
                       <div className="text-sm text-gray-900">{producto.unidadMedida}</div>
                     </td>
-                    <td className="px-6 py-4 whitespace-nowrap">
+                    <td className="hidden md:table-cell px-4 py-3 whitespace-nowrap">
                       <div className="text-sm text-gray-900">{producto.stockMinimo}</div>
                     </td>
-                    <td className="px-6 py-4 whitespace-nowrap">
+                    <td className="px-4 py-3 whitespace-nowrap">
                       <span
                         className={`px-2 py-1 rounded text-xs font-semibold ${
                           producto.activo === 1
@@ -317,26 +308,28 @@ export default function AdminProductosPage() {
                             : 'bg-gray-100 text-gray-800'
                         }`}
                       >
-                        {producto.activo === 1 ? 'ACTIVO' : 'INACTIVO'}
+                        {producto.activo === 1 ? 'ACTIVO' : 'INACT.'}
                       </span>
                     </td>
-                    <td className="px-6 py-4 whitespace-nowrap text-sm font-medium">
-                      <button
-                        onClick={() => handleOpenModal(producto)}
-                        className="text-[#2563EB] hover:text-[#1E40AF] mr-4"
-                      >
-                        Editar
-                      </button>
-                      <button
-                        onClick={() => handleToggleActivo(producto)}
-                        className={
-                          producto.activo === 1
-                            ? 'text-red-600 hover:text-red-800'
-                            : 'text-green-600 hover:text-green-800'
-                        }
-                      >
-                        {producto.activo === 1 ? 'Desactivar' : 'Activar'}
-                      </button>
+                    <td className="px-4 py-3 whitespace-nowrap text-sm font-medium">
+                      <div className="flex flex-col sm:flex-row gap-1 sm:gap-3">
+                        <button
+                          onClick={() => handleOpenModal(producto)}
+                          className="text-[#2563EB] hover:text-[#1E40AF] py-1"
+                        >
+                          Editar
+                        </button>
+                        <button
+                          onClick={() => handleToggleActivo(producto)}
+                          className={`py-1 ${
+                            producto.activo === 1
+                              ? 'text-red-600 hover:text-red-800'
+                              : 'text-green-600 hover:text-green-800'
+                          }`}
+                        >
+                          {producto.activo === 1 ? 'Desactivar' : 'Activar'}
+                        </button>
+                      </div>
                     </td>
                   </tr>
                 ))}
@@ -348,13 +341,13 @@ export default function AdminProductosPage() {
         {/* Modal */}
         {showModal && (
           <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4">
-            <div className="bg-white rounded-lg max-w-2xl w-full p-6 max-h-[90vh] overflow-y-auto">
+            <div className="bg-white rounded-lg max-w-2xl w-full p-4 sm:p-6 max-h-[90vh] overflow-y-auto">
               <h2 className="text-2xl font-bold mb-4">
                 {editingProducto ? 'Editar Producto' : 'Nuevo Producto'}
               </h2>
 
               <form onSubmit={handleSubmit}>
-                <div className="grid grid-cols-2 gap-4 mb-4">
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 mb-4">
                   <div>
                     <label className="block text-sm font-medium text-gray-700 mb-2">
                       Código *
@@ -412,7 +405,7 @@ export default function AdminProductosPage() {
                   />
                 </div>
 
-                <div className="grid grid-cols-3 gap-4 mb-6">
+                <div className="grid grid-cols-1 sm:grid-cols-3 gap-4 mb-6">
                   <div>
                     <label className="block text-sm font-medium text-gray-700 mb-2">
                       Unidad de Medida

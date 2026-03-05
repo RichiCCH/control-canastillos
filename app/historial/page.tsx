@@ -1,755 +1,507 @@
 'use client';
 
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useMemo } from 'react';
 import { useSession } from 'next-auth/react';
 import { useRouter } from 'next/navigation';
 import Navigation from '@/components/navigation';
 import * as XLSX from 'xlsx';
 import { generarPDFSalida, generarPDFRecepcion } from '@/lib/utils/pdf';
+import {
+  Filter, X, Download, FileText, ArrowUpDown, ArrowUp, ArrowDown,
+  ChevronLeft, ChevronRight, Search,
+} from 'lucide-react';
 
 interface Movimiento {
   id: number;
-  tipoMovimiento?: string;
   estado: string;
-  motivo?: string | null;
-  proveedorResponsable?: string | null;
   observaciones: string | null;
   transportadoPor: string | null;
   fechaSolicitud: string;
   fechaAprobacion: string | null;
   tipo: 'entrada' | 'salida' | 'ajuste_entrada' | 'ajuste_baja';
-  almacenOrigen: {
-    id: number;
-    nombre: string;
-  } | null;
-  almacenDestino: {
-    id: number;
-    nombre: string;
-  } | null;
-  usuarioSolicitante: {
-    id: number;
-    nombre: string;
-  } | null;
-  usuarioAprobador: {
-    id: number;
-    nombre: string;
-  } | null;
+  almacenOrigen: { id: number; nombre: string } | null;
+  almacenDestino: { id: number; nombre: string } | null;
+  usuarioSolicitante: { id: number; nombre: string } | null;
+  usuarioAprobador: { id: number; nombre: string } | null;
   detalles: Array<{
-    id: number;
-    cantidad: number;
-    producto: {
-      id: number;
-      codigo: string;
-      nombre: string;
-      tipo: string;
-      unidadMedida: string;
-    };
+    id: number; cantidad: number;
+    producto: { id: number; codigo: string; nombre: string; tipo: string; unidadMedida: string };
   }>;
 }
+
+type SortField = 'id' | 'fecha' | 'estado' | 'tipo';
+type SortDir = 'asc' | 'desc';
+
+const TIPO_EMOJI: Record<string, string> = {
+  canastillo_negro: '⬛', canastillo_color: '🎨', cooler: '❄️', caja: '📦',
+};
+
+const ESTADO_STYLE: Record<string, { bg: string; color: string; label: string }> = {
+  pendiente: { bg: '#fffbeb', color: '#b45309', label: 'Pendiente' },
+  aprobado: { bg: '#f0fdf4', color: '#166534', label: 'Aprobado' },
+  rechazado: { bg: '#fff1f2', color: '#be123c', label: 'Rechazado' },
+  anulado: { bg: '#f9fafb', color: '#6b7280', label: 'Anulado' },
+};
 
 export default function HistorialPage() {
   const router = useRouter();
   const { data: session, status } = useSession();
   const [movimientos, setMovimientos] = useState<Movimiento[]>([]);
   const [loading, setLoading] = useState(true);
-  const [currentPage, setCurrentPage] = useState(1);
-  const [itemsPerPage] = useState(10);
-  const [selectedAlmacen, setSelectedAlmacen] = useState<number | null>(null);
-  const [filterEstado, setFilterEstado] = useState<string>('todos');
-  const [filterTipo, setFilterTipo] = useState<string>('todos');
-  const [filterMovimientos, setFilterMovimientos] = useState<string>('');
+  const [showFilters, setShowFilters] = useState(false);
+  const [page, setPage] = useState(1);
+  const PER_PAGE = 15;
+
+  // ── Filtros ──
+  const [fEstado, setFEstado] = useState('todos');
+  const [fTipo, setFTipo] = useState('todos');
+  const [fBusqueda, setFBusqueda] = useState('');
+  const [fDesde, setFDesde] = useState('');
+  const [fHasta, setFHasta] = useState('');
+
+  // ── Orden ──
+  const [sortField, setSortField] = useState<SortField>('fecha');
+  const [sortDir, setSortDir] = useState<SortDir>('desc');
+
+  // ── Expandido ──
+  const [expanded, setExpanded] = useState<number | null>(null);
 
   useEffect(() => {
     if (status === 'loading') return;
-
-    if (status === 'unauthenticated') {
-      router.push('/login');
-      return;
-    }
-
+    if (status === 'unauthenticated') { router.push('/login'); return; }
     if (session?.user) {
-      const almacenId = (session.user as any).almacenId;
-      if (almacenId) {
-        setSelectedAlmacen(almacenId);
-        fetchMovimientos(almacenId);
-      } else {
-        setLoading(false);
-      }
+      const aid = (session.user as any).almacenId;
+      if (aid) fetch(`/api/historial?almacenId=${aid}`)
+        .then(r => r.json())
+        .then(data => setMovimientos(Array.isArray(data) ? data : []))
+        .catch(() => { })
+        .finally(() => setLoading(false));
+      else setLoading(false);
     }
   }, [session, status, router]);
 
-  const fetchMovimientos = async (almacenId: number) => {
-    setLoading(true);
-    try {
-      const response = await fetch(`/api/historial?almacenId=${almacenId}`);
-      const data = await response.json();
-      setMovimientos(data);
-    } catch (error) {
-      console.error('Error al cargar historial:', error);
-    } finally {
-      setLoading(false);
-    }
-  };
+  // ── Filtrado ──
+  const filtered = useMemo(() => {
+    let result = [...movimientos];
 
-  const getTipoIcon = (tipo: string) => {
-    const icons: Record<string, string> = {
-      canastillo_negro: '⬛',
-      canastillo_color: '🎨',
-      cooler: '❄️',
-      caja: '📦',
-    };
-    return icons[tipo] || '📦';
-  };
-
-  const getEstadoBadge = (estado: string) => {
-    const styles: Record<string, string> = {
-      pendiente: 'bg-yellow-100 text-yellow-800',
-      aprobado: 'bg-green-100 text-green-800',
-      rechazado: 'bg-red-100 text-red-800',
-      anulado: 'bg-gray-100 text-gray-800',
-    };
-
-    const labels: Record<string, string> = {
-      pendiente: 'Pendiente',
-      aprobado: 'Aprobado',
-      rechazado: 'Rechazado',
-      anulado: 'Anulado',
-    };
-
-    return (
-      <span className={`px-3 py-1 rounded-full text-xs font-semibold ${styles[estado] || 'bg-gray-100 text-gray-800'}`}>
-        {labels[estado] || estado}
-      </span>
-    );
-  };
-
-  const getTipoBadge = (tipo: 'entrada' | 'salida' | 'ajuste_entrada' | 'ajuste_baja') => {
-    if (tipo === 'ajuste_entrada') {
-      return (
-        <span className="px-3 py-1 rounded-full text-xs font-semibold bg-green-100 text-green-800">
-          ↑ Ajuste Entrada
-        </span>
-      );
-    } else if (tipo === 'ajuste_baja') {
-      return (
-        <span className="px-3 py-1 rounded-full text-xs font-semibold bg-red-100 text-red-800">
-          ↓ Ajuste Baja
-        </span>
-      );
-    } else if (tipo === 'entrada') {
-      return (
-        <span className="px-3 py-1 rounded-full text-xs font-semibold bg-blue-100 text-blue-800">
-          📥 Entrada
-        </span>
-      );
-    } else {
-      return (
-        <span className="px-3 py-1 rounded-full text-xs font-semibold bg-purple-100 text-purple-800">
-          📤 Salida
-        </span>
+    if (fEstado !== 'todos') result = result.filter(m => m.estado === fEstado);
+    if (fTipo !== 'todos') result = result.filter(m => m.tipo === fTipo);
+    if (fBusqueda.trim()) {
+      const q = fBusqueda.trim().toLowerCase();
+      result = result.filter(m =>
+        String(m.id).includes(q) ||
+        m.almacenOrigen?.nombre.toLowerCase().includes(q) ||
+        m.almacenDestino?.nombre.toLowerCase().includes(q) ||
+        m.usuarioSolicitante?.nombre.toLowerCase().includes(q) ||
+        m.detalles.some(d => d.producto.nombre.toLowerCase().includes(q))
       );
     }
-  };
-
-  const formatDate = (dateString: string) => {
-    const date = new Date(dateString);
-    return date.toLocaleDateString('es-ES', {
-      year: 'numeric',
-      month: 'short',
-      day: 'numeric',
-      hour: '2-digit',
-      minute: '2-digit',
-    });
-  };
-
-  const handleReimprimirSalida = (movimiento: Movimiento) => {
-    generarPDFSalida({
-      id: movimiento.id,
-      estado: movimiento.estado,
-      fechaSolicitud: movimiento.fechaSolicitud,
-      fechaAprobacion: movimiento.fechaAprobacion || undefined,
-      almacenOrigen: movimiento.almacenOrigen || { id: 0, nombre: 'Desconocido' },
-      almacenDestino: movimiento.almacenDestino || { id: 0, nombre: 'Desconocido' },
-      usuarioSolicitante: movimiento.usuarioSolicitante || { id: 0, nombre: 'Desconocido' },
-      usuarioAprobador: movimiento.usuarioAprobador || undefined,
-      transportadoPor: movimiento.transportadoPor || undefined,
-      observaciones: movimiento.observaciones || undefined,
-      detalles: movimiento.detalles.map(d => ({
-        codigo: d.producto.codigo,
-        nombre: d.producto.nombre,
-        tipo: d.producto.tipo,
-        cantidad: d.cantidad,
-        unidadMedida: d.producto.unidadMedida,
-      })),
-    });
-  };
-
-  const handleReimprimirRecepcion = (movimiento: Movimiento) => {
-    generarPDFRecepcion({
-      id: movimiento.id,
-      estado: movimiento.estado,
-      fechaSolicitud: movimiento.fechaSolicitud,
-      fechaAprobacion: movimiento.fechaAprobacion || undefined,
-      almacenOrigen: movimiento.almacenOrigen || { id: 0, nombre: 'Desconocido' },
-      almacenDestino: movimiento.almacenDestino || { id: 0, nombre: 'Desconocido' },
-      usuarioSolicitante: movimiento.usuarioSolicitante || { id: 0, nombre: 'Desconocido' },
-      usuarioAprobador: movimiento.usuarioAprobador || undefined,
-      transportadoPor: movimiento.transportadoPor || undefined,
-      observaciones: movimiento.observaciones || undefined,
-      detalles: movimiento.detalles.map(d => ({
-        codigo: d.producto.codigo,
-        nombre: d.producto.nombre,
-        tipo: d.producto.tipo,
-        cantidad: d.cantidad,
-        unidadMedida: d.producto.unidadMedida,
-      })),
-    });
-  };
-
-  const exportToExcel = () => {
-    // Preparar datos para Excel
-    const excelData = filteredMovimientos.map(mov => {
-      // Crear una fila base con la información del movimiento
-      const baseRow = {
-        'ID Movimiento': mov.id,
-        'Tipo': mov.tipo === 'entrada' ? 'Entrada' : 'Salida',
-        'Estado': mov.estado.charAt(0).toUpperCase() + mov.estado.slice(1),
-        'Almacén Origen': mov.almacenOrigen?.nombre || 'N/A',
-        'Almacén Destino': mov.almacenDestino?.nombre || 'N/A',
-        'Usuario Solicitante': mov.usuarioSolicitante?.nombre || 'N/A',
-        'Usuario Aprobador': mov.usuarioAprobador?.nombre || 'N/A',
-        'Fecha Solicitud': formatDate(mov.fechaSolicitud),
-        'Fecha Aprobación': mov.fechaAprobacion ? formatDate(mov.fechaAprobacion) : 'N/A',
-        'Observaciones': mov.observaciones || 'N/A',
-      };
-
-      // Si hay detalles, crear una fila por cada producto
-      if (mov.detalles && mov.detalles.length > 0) {
-        return mov.detalles.map((detalle, index) => ({
-          ...baseRow,
-          'Producto Código': detalle.producto.codigo,
-          'Producto Nombre': detalle.producto.nombre,
-          'Producto Tipo': detalle.producto.tipo,
-          'Cantidad': detalle.cantidad,
-          'Unidad': detalle.producto.unidadMedida,
-        }));
-      }
-
-      // Si no hay detalles, devolver solo la fila base
-      return [{
-        ...baseRow,
-        'Producto Código': 'N/A',
-        'Producto Nombre': 'Sin productos',
-        'Producto Tipo': 'N/A',
-        'Cantidad': 0,
-        'Unidad': 'N/A',
-      }];
-    }).flat(); // Aplanar el array de arrays
-
-    // Crear libro de trabajo
-    const ws = XLSX.utils.json_to_sheet(excelData);
-    const wb = XLSX.utils.book_new();
-    XLSX.utils.book_append_sheet(wb, ws, 'Historial');
-
-    // Ajustar ancho de columnas
-    const colWidths = [
-      { wch: 12 }, // ID Movimiento
-      { wch: 10 }, // Tipo
-      { wch: 12 }, // Estado
-      { wch: 20 }, // Almacén Origen
-      { wch: 20 }, // Almacén Destino
-      { wch: 20 }, // Usuario Solicitante
-      { wch: 20 }, // Usuario Aprobador
-      { wch: 18 }, // Fecha Solicitud
-      { wch: 18 }, // Fecha Aprobación
-      { wch: 30 }, // Observaciones
-      { wch: 15 }, // Producto Código
-      { wch: 25 }, // Producto Nombre
-      { wch: 18 }, // Producto Tipo
-      { wch: 10 }, // Cantidad
-      { wch: 10 }, // Unidad
-    ];
-    ws['!cols'] = colWidths;
-
-    // Generar nombre de archivo con timestamp
-    const timestamp = new Date().toISOString().slice(0, 10);
-    const filename = `historial_movimientos_${timestamp}.xlsx`;
-
-    // Descargar archivo
-    XLSX.writeFile(wb, filename);
-  };
-
-  // Filtrar movimientos
-  const filteredMovimientos = movimientos.filter((mov) => {
-    if (filterEstado !== 'todos' && mov.estado !== filterEstado) return false;
-    if (filterTipo !== 'todos' && mov.tipo !== filterTipo) return false;
-
-    // Filtrar por números de movimiento
-    if (filterMovimientos.trim() !== '') {
-      const numerosIngresados = filterMovimientos
-        .split(',')
-        .map(num => num.trim())
-        .filter(num => num !== '')
-        .map(num => parseInt(num))
-        .filter(num => !isNaN(num));
-
-      if (numerosIngresados.length > 0) {
-        if (!numerosIngresados.includes(mov.id)) return false;
-      }
+    if (fDesde) {
+      const d = new Date(fDesde); d.setHours(0, 0, 0, 0);
+      result = result.filter(m => new Date(m.fechaSolicitud) >= d);
+    }
+    if (fHasta) {
+      const d = new Date(fHasta); d.setHours(23, 59, 59, 999);
+      result = result.filter(m => new Date(m.fechaSolicitud) <= d);
     }
 
-    return true;
+    // ── Ordenar ──
+    result.sort((a, b) => {
+      let cmp = 0;
+      if (sortField === 'id') cmp = a.id - b.id;
+      if (sortField === 'fecha') cmp = new Date(a.fechaSolicitud).getTime() - new Date(b.fechaSolicitud).getTime();
+      if (sortField === 'estado') cmp = a.estado.localeCompare(b.estado);
+      if (sortField === 'tipo') cmp = a.tipo.localeCompare(b.tipo);
+      return sortDir === 'asc' ? cmp : -cmp;
+    });
+
+    return result;
+  }, [movimientos, fEstado, fTipo, fBusqueda, fDesde, fHasta, sortField, sortDir]);
+
+  const totalPages = Math.ceil(filtered.length / PER_PAGE);
+  const paged = filtered.slice((page - 1) * PER_PAGE, page * PER_PAGE);
+
+  const toggleSort = (field: SortField) => {
+    if (sortField === field) setSortDir(d => d === 'asc' ? 'desc' : 'asc');
+    else { setSortField(field); setSortDir('desc'); }
+    setPage(1);
+  };
+
+  const SortIcon = ({ field }: { field: SortField }) => {
+    if (sortField !== field) return <ArrowUpDown className="w-3.5 h-3.5 opacity-30" />;
+    return sortDir === 'asc'
+      ? <ArrowUp className="w-3.5 h-3.5 text-blue-600" />
+      : <ArrowDown className="w-3.5 h-3.5 text-blue-600" />;
+  };
+
+  const resetFiltros = () => {
+    setFEstado('todos'); setFTipo('todos'); setFBusqueda(''); setFDesde(''); setFHasta('');
+    setPage(1);
+  };
+
+  const activeFilters = [fEstado !== 'todos', fTipo !== 'todos', !!fBusqueda.trim(), !!fDesde, !!fHasta].filter(Boolean).length;
+
+  const formatDate = (s: string) => new Date(s).toLocaleDateString('es-ES', {
+    day: '2-digit', month: '2-digit', year: '2-digit', hour: '2-digit', minute: '2-digit',
   });
 
-  // Paginación
-  const indexOfLastItem = currentPage * itemsPerPage;
-  const indexOfFirstItem = indexOfLastItem - itemsPerPage;
-  const currentMovimientos = filteredMovimientos.slice(indexOfFirstItem, indexOfLastItem);
-  const totalPages = Math.ceil(filteredMovimientos.length / itemsPerPage);
+  // ── Estadísticas rapidas ──
+  const stats = useMemo(() => ({
+    total: movimientos.length,
+    aprobados: movimientos.filter(m => m.estado === 'aprobado').length,
+    pendientes: movimientos.filter(m => m.estado === 'pendiente').length,
+    rechazados: movimientos.filter(m => m.estado === 'rechazado').length,
+  }), [movimientos]);
 
-  const paginate = (pageNumber: number) => setCurrentPage(pageNumber);
-
-  if (loading) {
-    return (
-      <div className="min-h-screen" style={{ backgroundColor: '#e8e8e8' }}>
-        <Navigation />
-        {/* Spacer for fixed navigation */}
-        <div className="h-20"></div>
-        <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 pt-8 pb-8">
-          <div className="card bg-white">
-            <div className="flex items-center justify-center py-12">
-              <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-[#2563EB]"></div>
-              <p className="ml-4 text-[#64748B]">Cargando historial...</p>
-            </div>
-          </div>
-        </div>
-      </div>
+  // ── Export Excel ──
+  const exportExcel = () => {
+    const rows = filtered.flatMap(m =>
+      m.detalles.length ? m.detalles.map(d => ({
+        'ID': m.id, 'Estado': ESTADO_STYLE[m.estado]?.label || m.estado,
+        'Tipo': m.tipo, 'Origen': m.almacenOrigen?.nombre || '', 'Destino': m.almacenDestino?.nombre || '',
+        'Solicitante': m.usuarioSolicitante?.nombre || '', 'Aprobador': m.usuarioAprobador?.nombre || '',
+        'Fecha Solicitud': formatDate(m.fechaSolicitud),
+        'Fecha Aprobación': m.fechaAprobacion ? formatDate(m.fechaAprobacion) : '',
+        'Producto': d.producto.nombre, 'Código': d.producto.codigo,
+        'Cantidad': d.cantidad, 'Unidad': d.producto.unidadMedida,
+        'Observaciones': m.observaciones || '',
+      })) : [{ 'ID': m.id, 'Estado': ESTADO_STYLE[m.estado]?.label || m.estado, 'Tipo': m.tipo }]
     );
-  }
+    const ws = XLSX.utils.json_to_sheet(rows);
+    const wb = XLSX.utils.book_new();
+    XLSX.utils.book_append_sheet(wb, ws, 'Historial');
+    XLSX.writeFile(wb, `historial_${new Date().toISOString().slice(0, 10)}.xlsx`);
+  };
+
+  const pdfSalida = (m: Movimiento) => generarPDFSalida({
+    id: m.id, estado: m.estado, fechaSolicitud: m.fechaSolicitud, fechaAprobacion: m.fechaAprobacion || undefined,
+    almacenOrigen: m.almacenOrigen || { id: 0, nombre: 'N/A' },
+    almacenDestino: m.almacenDestino || { id: 0, nombre: 'N/A' },
+    usuarioSolicitante: m.usuarioSolicitante || { id: 0, nombre: 'N/A' },
+    usuarioAprobador: m.usuarioAprobador || undefined,
+    transportadoPor: m.transportadoPor || undefined,
+    observaciones: m.observaciones || undefined,
+    detalles: m.detalles.map(d => ({ ...d.producto, cantidad: d.cantidad, unidadMedida: d.producto.unidadMedida })),
+  });
+
+  const pdfRecepcion = (m: Movimiento) => generarPDFRecepcion({
+    id: m.id, estado: m.estado, fechaSolicitud: m.fechaSolicitud, fechaAprobacion: m.fechaAprobacion || undefined,
+    almacenOrigen: m.almacenOrigen || { id: 0, nombre: 'N/A' },
+    almacenDestino: m.almacenDestino || { id: 0, nombre: 'N/A' },
+    usuarioSolicitante: m.usuarioSolicitante || { id: 0, nombre: 'N/A' },
+    usuarioAprobador: m.usuarioAprobador || undefined,
+    observaciones: m.observaciones || undefined,
+    detalles: m.detalles.map(d => ({ ...d.producto, cantidad: d.cantidad, unidadMedida: d.producto.unidadMedida })),
+  });
 
   return (
-    <div className="min-h-screen" style={{ backgroundColor: '#e8e8e8' }}>
+    <div className="min-h-screen bg-background">
       <Navigation />
-      {/* Spacer for fixed navigation */}
-      <div className="h-20"></div>
-      <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 pt-8 pb-8">
-        {/* Header Section */}
-        <div className="mb-6">
-          <h1 className="text-2xl sm:text-3xl font-['Playfair_Display'] font-bold text-[#1F2937] mb-2">
-            Historial de Movimientos
-          </h1>
-          <p className="text-sm sm:text-base text-[#64748B]">
-            Registro completo de entradas y salidas de tu almacén
-          </p>
-        </div>
+      <div className="main-content">
+        <div className="max-w-7xl mx-auto px-3 sm:px-6 lg:px-8 pt-6 lg:pt-8 space-y-4 pb-8">
 
-        {/* Stats Cards */}
-        <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-6 gap-4 mb-6">
-          <div className="card bg-white">
-            <div className="flex items-center justify-between">
-              <div>
-                <p className="text-[#64748B] text-xs font-medium">Total</p>
-                <p className="text-2xl font-['Montserrat'] font-bold text-[#1F2937] mt-1">
-                  {movimientos.length}
-                </p>
-              </div>
-              <div className="bg-blue-100 rounded-full p-2">
-                <svg className="w-6 h-6 text-[#2563EB]" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
-                </svg>
-              </div>
-            </div>
-          </div>
-
-          <div className="card bg-white">
-            <div className="flex items-center justify-between">
-              <div>
-                <p className="text-[#64748B] text-xs font-medium">Entradas</p>
-                <p className="text-2xl font-['Montserrat'] font-bold text-blue-600 mt-1">
-                  {movimientos.filter(m => m.tipo === 'entrada').length}
-                </p>
-              </div>
-              <div className="bg-blue-100 rounded-full p-2">
-                <span className="text-2xl">📥</span>
-              </div>
-            </div>
-          </div>
-
-          <div className="card bg-white">
-            <div className="flex items-center justify-between">
-              <div>
-                <p className="text-[#64748B] text-xs font-medium">Salidas</p>
-                <p className="text-2xl font-['Montserrat'] font-bold text-purple-600 mt-1">
-                  {movimientos.filter(m => m.tipo === 'salida').length}
-                </p>
-              </div>
-              <div className="bg-purple-100 rounded-full p-2">
-                <span className="text-2xl">📤</span>
-              </div>
-            </div>
-          </div>
-
-          <div className="card bg-white">
-            <div className="flex items-center justify-between">
-              <div>
-                <p className="text-[#64748B] text-xs font-medium">Ajustes +</p>
-                <p className="text-2xl font-['Montserrat'] font-bold text-green-600 mt-1">
-                  {movimientos.filter(m => m.tipo === 'ajuste_entrada').length}
-                </p>
-              </div>
-              <div className="bg-green-100 rounded-full p-2">
-                <span className="text-2xl">↑</span>
-              </div>
-            </div>
-          </div>
-
-          <div className="card bg-white">
-            <div className="flex items-center justify-between">
-              <div>
-                <p className="text-[#64748B] text-xs font-medium">Ajustes -</p>
-                <p className="text-2xl font-['Montserrat'] font-bold text-red-600 mt-1">
-                  {movimientos.filter(m => m.tipo === 'ajuste_baja').length}
-                </p>
-              </div>
-              <div className="bg-red-100 rounded-full p-2">
-                <span className="text-2xl">↓</span>
-              </div>
-            </div>
-          </div>
-
-          <div className="card bg-white">
-            <div className="flex items-center justify-between">
-              <div>
-                <p className="text-[#64748B] text-xs font-medium">Aprobados</p>
-                <p className="text-2xl font-['Montserrat'] font-bold text-green-600 mt-1">
-                  {movimientos.filter(m => m.estado === 'aprobado').length}
-                </p>
-              </div>
-              <div className="bg-green-100 rounded-full p-2">
-                <svg className="w-6 h-6 text-green-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" />
-                </svg>
-              </div>
-            </div>
-          </div>
-
-          <div className="card bg-white">
-            <div className="flex items-center justify-between">
-              <div>
-                <p className="text-[#64748B] text-xs font-medium">Rechazados</p>
-                <p className="text-2xl font-['Montserrat'] font-bold text-red-600 mt-1">
-                  {movimientos.filter(m => m.estado === 'rechazado').length}
-                </p>
-              </div>
-              <div className="bg-red-100 rounded-full p-2">
-                <svg className="w-6 h-6 text-red-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
-                </svg>
-              </div>
-            </div>
-          </div>
-
-          <div className="card bg-white">
-            <div className="flex items-center justify-between">
-              <div>
-                <p className="text-[#64748B] text-xs font-medium">Anulados</p>
-                <p className="text-2xl font-['Montserrat'] font-bold text-gray-600 mt-1">
-                  {movimientos.filter(m => m.estado === 'anulado').length}
-                </p>
-              </div>
-              <div className="bg-gray-100 rounded-full p-2">
-                <svg className="w-6 h-6 text-gray-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M18.364 18.364A9 9 0 005.636 5.636m12.728 12.728A9 9 0 015.636 5.636m12.728 12.728L5.636 5.636" />
-                </svg>
-              </div>
-            </div>
-          </div>
-        </div>
-
-        {/* Filters */}
-        <div className="card bg-white mb-6">
-          <h3 className="text-lg font-['Montserrat'] font-semibold text-[#1F2937] mb-4">
-            Filtros
-          </h3>
-          <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
+          {/* ── Header ── */}
+          <div className="flex items-start justify-between gap-3 flex-wrap">
             <div>
-              <label className="block text-sm font-medium text-[#64748B] mb-2">
-                Estado
-              </label>
-              <select
-                value={filterEstado}
-                onChange={(e) => {
-                  setFilterEstado(e.target.value);
-                  setCurrentPage(1);
-                }}
-                className="input-field"
-              >
-                <option value="todos">Todos los estados</option>
-                <option value="pendiente">Pendiente</option>
-                <option value="aprobado">Aprobado</option>
-                <option value="rechazado">Rechazado</option>
-                <option value="anulado">Anulado</option>
-              </select>
+              <h1 className="text-2xl font-bold lg:text-3xl text-gray-900">Historial de Movimientos</h1>
+              <p className="text-sm mt-1 text-muted-foreground">
+                Registro completo · {filtered.length} resultado{filtered.length !== 1 ? 's' : ''}
+                {activeFilters > 0 && <span className="ml-1 text-blue-600">(filtrando)</span>}
+              </p>
             </div>
-
-            <div>
-              <label className="block text-sm font-medium text-[#64748B] mb-2">
-                Tipo de Movimiento
-              </label>
-              <select
-                value={filterTipo}
-                onChange={(e) => {
-                  setFilterTipo(e.target.value);
-                  setCurrentPage(1);
-                }}
-                className="input-field"
-              >
-                <option value="todos">Todos</option>
-                <option value="entrada">Entradas</option>
-                <option value="salida">Salidas</option>
-              </select>
-            </div>
-
-            <div>
-              <label className="block text-sm font-medium text-[#64748B] mb-2">
-                N° de Movimiento(s)
-              </label>
-              <input
-                type="text"
-                value={filterMovimientos}
-                onChange={(e) => {
-                  setFilterMovimientos(e.target.value);
-                  setCurrentPage(1);
-                }}
-                placeholder="Ej: 25, 30, 45"
-                className="input-field"
-              />
-              <p className="text-xs text-[#64748B] mt-1">Separa múltiples números con comas</p>
-            </div>
-
-            <div className="flex items-end gap-3">
+            <div className="flex items-center gap-2">
               <button
-                onClick={() => {
-                  setFilterEstado('todos');
-                  setFilterTipo('todos');
-                  setFilterMovimientos('');
-                  setCurrentPage(1);
-                }}
-                className="flex-1 bg-gray-600 hover:bg-gray-700 text-white px-4 py-2.5 rounded-lg font-semibold transition-colors"
+                onClick={exportExcel}
+                disabled={filtered.length === 0}
+                className="flex items-center gap-1.5 px-3 py-2 rounded-xl text-sm font-semibold transition-colors disabled:opacity-40"
+                style={{ background: '#f0fdf4', color: '#166534', border: '1px solid #bbf7d0' }}
               >
-                Limpiar Filtros
+                <Download className="w-4 h-4" /> Excel
               </button>
               <button
-                onClick={exportToExcel}
-                disabled={filteredMovimientos.length === 0}
-                className="flex-1 bg-green-600 hover:bg-green-700 text-white px-4 py-2.5 rounded-lg font-semibold transition-colors disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center gap-2"
+                onClick={() => setShowFilters(v => !v)}
+                className="flex items-center gap-1.5 px-3 py-2 rounded-xl text-sm font-semibold transition-colors relative"
+                style={{
+                  background: showFilters ? '#eff6ff' : '#f9fafb',
+                  color: showFilters ? '#1d4ed8' : '#374151',
+                  border: showFilters ? '1px solid #bfdbfe' : '1px solid #e5e7eb',
+                }}
               >
-                <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 10v6m0 0l-3-3m3 3l3-3m2 8H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
-                </svg>
-                Exportar Excel
+                <Filter className="w-4 h-4" /> Filtros
+                {activeFilters > 0 && (
+                  <span className="absolute -top-1.5 -right-1.5 h-4 w-4 rounded-full bg-blue-600 text-white text-[9px] font-bold flex items-center justify-center">
+                    {activeFilters}
+                  </span>
+                )}
               </button>
             </div>
           </div>
-        </div>
 
-        {/* Movimientos List */}
-        <div className="card bg-white">
-          <div className="flex items-center justify-between mb-6">
-            <h3 className="text-xl font-['Montserrat'] font-semibold text-[#1F2937]">
-              Movimientos ({filteredMovimientos.length})
-            </h3>
-            <div className="text-sm text-[#64748B]">
-              Página {currentPage} de {totalPages || 1}
-            </div>
-          </div>
-
-          {currentMovimientos.length === 0 ? (
-            <div className="text-center py-12">
-              <svg className="mx-auto h-16 w-16 text-[#CBD5E1] mb-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
-              </svg>
-              <p className="text-[#64748B] text-lg">No hay movimientos para mostrar</p>
-            </div>
-          ) : (
-            <div className="space-y-4">
-              {currentMovimientos.map((movimiento) => (
-                <div
-                  key={movimiento.id}
-                  className="border border-[#E5E7EB] rounded-lg p-4 hover:shadow-md transition-shadow"
-                >
-                  <div className="flex items-start justify-between mb-3">
-                    <div className="flex items-center gap-3">
-                      {getTipoBadge(movimiento.tipo)}
-                      {getEstadoBadge(movimiento.estado)}
-                      <span className="text-sm font-mono text-[#64748B]">
-                        #{movimiento.id}
-                      </span>
-                    </div>
-                    <div className="text-right">
-                      <p className="text-sm text-[#64748B]">
-                        {formatDate(movimiento.fechaSolicitud)}
-                      </p>
-                      {movimiento.fechaAprobacion && (
-                        <p className="text-xs text-[#94A3B8]">
-                          Aprobado: {formatDate(movimiento.fechaAprobacion)}
-                        </p>
-                      )}
-                    </div>
-                  </div>
-
-                  <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mb-3">
-                    {(movimiento.tipo === 'ajuste_entrada' || movimiento.tipo === 'ajuste_baja') ? (
-                      <>
-                        <div>
-                          <p className="text-xs text-[#64748B] mb-1">Motivo:</p>
-                          <p className="font-medium text-[#1F2937]">
-                            {movimiento.motivo || 'Sin motivo'}
-                          </p>
-                        </div>
-                        {movimiento.proveedorResponsable && (
-                          <div>
-                            <p className="text-xs text-[#64748B] mb-1">
-                              {movimiento.tipo === 'ajuste_entrada' ? 'Proveedor:' : 'Responsable:'}
-                            </p>
-                            <p className="font-medium text-[#1F2937]">
-                              {movimiento.proveedorResponsable}
-                            </p>
-                          </div>
-                        )}
-                      </>
-                    ) : (
-                      <>
-                        <div>
-                          <p className="text-xs text-[#64748B] mb-1">
-                            {movimiento.tipo === 'entrada' ? 'De' : 'A'}:
-                          </p>
-                          <p className="font-medium text-[#1F2937]">
-                            {movimiento.tipo === 'entrada'
-                              ? movimiento.almacenOrigen?.nombre
-                              : movimiento.almacenDestino?.nombre}
-                          </p>
-                        </div>
-                        <div>
-                          <p className="text-xs text-[#64748B] mb-1">Solicitado por:</p>
-                          <p className="font-medium text-[#1F2937]">
-                            {movimiento.usuarioSolicitante?.nombre}
-                          </p>
-                        </div>
-                      </>
-                    )}
-                  </div>
-
-                  {movimiento.usuarioAprobador && (
-                    <div className="mb-3">
-                      <p className="text-xs text-[#64748B] mb-1">Aprobado por:</p>
-                      <p className="font-medium text-[#1F2937]">
-                        {movimiento.usuarioAprobador.nombre}
-                      </p>
-                    </div>
-                  )}
-
-                  <div className="bg-[#F9FAFB] rounded-lg p-3 mb-3">
-                    <p className="text-xs text-[#64748B] mb-2 font-semibold">
-                      Productos ({movimiento.detalles.length}):
-                    </p>
-                    <div className="space-y-1">
-                      {movimiento.detalles.map((detalle) => (
-                        <div key={detalle.id} className="flex items-center justify-between text-sm">
-                          <span className="text-[#1F2937]">
-                            {getTipoIcon(detalle.producto.tipo)} {detalle.producto.nombre}
-                          </span>
-                          <span className="font-semibold text-[#2563EB]">
-                            {detalle.cantidad} {detalle.producto.unidadMedida}
-                          </span>
-                        </div>
-                      ))}
-                    </div>
-                  </div>
-
-                  {movimiento.observaciones && (
-                    <div className="bg-blue-50 rounded-lg p-3 mb-3">
-                      <p className="text-xs text-[#64748B] mb-1">Observaciones:</p>
-                      <p className="text-sm text-[#1F2937]">{movimiento.observaciones}</p>
-                    </div>
-                  )}
-
-                  {/* Botones de reimpresión */}
-                  <div className="flex gap-2 pt-3 border-t border-[#E5E7EB]">
-                    <button
-                      onClick={() => handleReimprimirSalida(movimiento)}
-                      className="flex-1 bg-blue-600 hover:bg-blue-700 text-white px-4 py-2 rounded-lg font-semibold transition-colors flex items-center justify-center gap-2"
-                    >
-                      <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M17 17h2a2 2 0 002-2v-4a2 2 0 00-2-2H5a2 2 0 00-2 2v4a2 2 0 002 2h2m2 4h6a2 2 0 002-2v-4a2 2 0 00-2-2H9a2 2 0 00-2 2v4a2 2 0 002 2zm8-12V5a2 2 0 00-2-2H9a2 2 0 00-2 2v4h10z" />
-                      </svg>
-                      PDF Salida
-                    </button>
-                    {movimiento.estado === 'aprobado' && (
-                      <button
-                        onClick={() => handleReimprimirRecepcion(movimiento)}
-                        className="flex-1 bg-green-600 hover:bg-green-700 text-white px-4 py-2 rounded-lg font-semibold transition-colors flex items-center justify-center gap-2"
-                      >
-                        <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z" />
-                        </svg>
-                        PDF Recepción
-                      </button>
-                    )}
-                  </div>
+          {/* ── Stats rápidas ── */}
+          {!loading && (
+            <div className="grid grid-cols-4 gap-2">
+              {[
+                { label: 'Total', v: stats.total, bg: '#eff6ff', color: '#1d4ed8' },
+                { label: 'Aprobados', v: stats.aprobados, bg: '#f0fdf4', color: '#166534' },
+                { label: 'Pendientes', v: stats.pendientes, bg: '#fffbeb', color: '#b45309' },
+                { label: 'Rechazados', v: stats.rechazados, bg: '#fff1f2', color: '#be123c' },
+              ].map(s => (
+                <div key={s.label} className="card-elevated p-3 text-center" style={{ background: s.bg }}>
+                  <p className="text-xl font-bold" style={{ color: s.color }}>{s.v}</p>
+                  <p className="text-[10px] font-semibold uppercase tracking-wide mt-0.5" style={{ color: s.color + 'bb' }}>{s.label}</p>
                 </div>
               ))}
             </div>
           )}
 
-          {/* Pagination */}
-          {totalPages > 1 && (
-            <div className="flex items-center justify-center gap-2 mt-6 pt-6 border-t border-[#E5E7EB]">
-              <button
-                onClick={() => paginate(currentPage - 1)}
-                disabled={currentPage === 1}
-                className="px-4 py-2 rounded-lg bg-[#F3F4F6] text-[#64748B] font-medium hover:bg-[#E5E7EB] disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
-              >
-                Anterior
-              </button>
-
-              <div className="flex gap-2">
-                {Array.from({ length: totalPages }, (_, i) => i + 1).map((page) => {
-                  // Mostrar solo páginas cercanas
-                  if (
-                    page === 1 ||
-                    page === totalPages ||
-                    (page >= currentPage - 2 && page <= currentPage + 2)
-                  ) {
-                    return (
-                      <button
-                        key={page}
-                        onClick={() => paginate(page)}
-                        className={`px-4 py-2 rounded-lg font-medium transition-colors ${
-                          currentPage === page
-                            ? 'bg-[#2563EB] text-white'
-                            : 'bg-[#F3F4F6] text-[#64748B] hover:bg-[#E5E7EB]'
-                        }`}
-                      >
-                        {page}
-                      </button>
-                    );
-                  } else if (page === currentPage - 3 || page === currentPage + 3) {
-                    return <span key={page} className="px-2 text-[#64748B]">...</span>;
-                  }
-                  return null;
-                })}
+          {/* ── Panel de filtros ── */}
+          {showFilters && (
+            <div className="card-elevated p-4 space-y-3 animate-fade-in">
+              {/* Búsqueda rápida */}
+              <div className="relative">
+                <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400" />
+                <input
+                  type="text" value={fBusqueda} onChange={e => { setFBusqueda(e.target.value); setPage(1); }}
+                  placeholder="Buscar por #ID, almacén, usuario o producto..."
+                  className="input-field pl-9"
+                />
               </div>
 
-              <button
-                onClick={() => paginate(currentPage + 1)}
-                disabled={currentPage === totalPages}
-                className="px-4 py-2 rounded-lg bg-[#F3F4F6] text-[#64748B] font-medium hover:bg-[#E5E7EB] disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
-              >
-                Siguiente
-              </button>
+              <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
+                <div>
+                  <label className="field-label">Estado</label>
+                  <select value={fEstado} onChange={e => { setFEstado(e.target.value); setPage(1); }} className="input-field">
+                    <option value="todos">Todos</option>
+                    <option value="pendiente">Pendiente</option>
+                    <option value="aprobado">Aprobado</option>
+                    <option value="rechazado">Rechazado</option>
+                    <option value="anulado">Anulado</option>
+                  </select>
+                </div>
+                <div>
+                  <label className="field-label">Tipo</label>
+                  <select value={fTipo} onChange={e => { setFTipo(e.target.value); setPage(1); }} className="input-field">
+                    <option value="todos">Todos</option>
+                    <option value="entrada">Entrada</option>
+                    <option value="salida">Salida</option>
+                  </select>
+                </div>
+                <div>
+                  <label className="field-label">Desde</label>
+                  <input type="date" value={fDesde} onChange={e => { setFDesde(e.target.value); setPage(1); }} className="input-field" />
+                </div>
+                <div>
+                  <label className="field-label">Hasta</label>
+                  <input type="date" value={fHasta} onChange={e => { setFHasta(e.target.value); setPage(1); }} className="input-field" />
+                </div>
+              </div>
+
+              {activeFilters > 0 && (
+                <button onClick={resetFiltros} className="flex items-center gap-1.5 text-sm font-medium text-gray-500 hover:text-gray-700 transition-colors">
+                  <X className="w-3.5 h-3.5" /> Limpiar filtros
+                </button>
+              )}
             </div>
           )}
+
+          {/* ── Tabla ── */}
+          <div className="card-elevated overflow-hidden">
+            {loading ? (
+              <div className="flex items-center justify-center py-16 gap-3">
+                <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-blue-600" />
+                <span className="text-sm text-gray-400">Cargando historial...</span>
+              </div>
+            ) : filtered.length === 0 ? (
+              <div className="py-16 text-center">
+                <FileText className="mx-auto h-10 w-10 text-gray-300 mb-2" />
+                <p className="font-semibold text-gray-600">Sin movimientos</p>
+                <p className="text-sm text-gray-400 mt-1">Prueba cambiando los filtros</p>
+              </div>
+            ) : (
+              <>
+                {/* ─ Tabla Desktop ─ */}
+                <div className="hidden sm:block overflow-x-auto">
+                  <table className="w-full text-sm">
+                    <thead>
+                      <tr className="border-b border-gray-100 bg-gray-50/80">
+                        <th className="text-left px-4 py-3 font-semibold text-gray-500 text-xs uppercase tracking-wide w-12">
+                          <button onClick={() => toggleSort('id')} className="flex items-center gap-1 hover:text-gray-700">
+                            #ID <SortIcon field="id" />
+                          </button>
+                        </th>
+                        <th className="text-left px-4 py-3 font-semibold text-gray-500 text-xs uppercase tracking-wide">
+                          <button onClick={() => toggleSort('fecha')} className="flex items-center gap-1 hover:text-gray-700">
+                            Fecha <SortIcon field="fecha" />
+                          </button>
+                        </th>
+                        <th className="text-left px-4 py-3 font-semibold text-gray-500 text-xs uppercase tracking-wide">
+                          <button onClick={() => toggleSort('estado')} className="flex items-center gap-1 hover:text-gray-700">
+                            Estado <SortIcon field="estado" />
+                          </button>
+                        </th>
+                        <th className="text-left px-4 py-3 font-semibold text-gray-500 text-xs uppercase tracking-wide">Origen → Destino</th>
+                        <th className="text-left px-4 py-3 font-semibold text-gray-500 text-xs uppercase tracking-wide">Productos</th>
+                        <th className="text-left px-4 py-3 font-semibold text-gray-500 text-xs uppercase tracking-wide">Solicitante</th>
+                        <th className="px-4 py-3 w-20"></th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {paged.map((m, idx) => {
+                        const es = ESTADO_STYLE[m.estado] || { bg: '#f3f4f6', color: '#374151', label: m.estado };
+                        const isExp = expanded === m.id;
+                        return (
+                          <>
+                            <tr
+                              key={m.id}
+                              className={`border-b border-gray-50 cursor-pointer transition-colors ${isExp ? 'bg-blue-50/30' : 'hover:bg-gray-50/60'}`}
+                              onClick={() => setExpanded(isExp ? null : m.id)}
+                            >
+                              <td className="px-4 py-3">
+                                <span className="text-xs font-bold text-blue-700 bg-blue-100 px-1.5 py-0.5 rounded">#{m.id}</span>
+                              </td>
+                              <td className="px-4 py-3 text-xs text-gray-500 whitespace-nowrap">{formatDate(m.fechaSolicitud)}</td>
+                              <td className="px-4 py-3">
+                                <span className="text-[10px] font-bold px-2 py-0.5 rounded-full" style={{ background: es.bg, color: es.color }}>
+                                  {es.label}
+                                </span>
+                              </td>
+                              <td className="px-4 py-3 text-xs text-gray-600 max-w-[180px]">
+                                <span className="truncate block">{m.almacenOrigen?.nombre || '—'}</span>
+                                <span className="text-gray-400">→ {m.almacenDestino?.nombre || '—'}</span>
+                              </td>
+                              <td className="px-4 py-3">
+                                <div className="flex flex-wrap gap-1">
+                                  {m.detalles.slice(0, 2).map(d => (
+                                    <span key={d.id} className="text-[10px] font-semibold px-1.5 py-0.5 rounded bg-gray-100 text-gray-600">
+                                      {TIPO_EMOJI[d.producto.tipo]} {d.cantidad}
+                                    </span>
+                                  ))}
+                                  {m.detalles.length > 2 && (
+                                    <span className="text-[10px] text-gray-400">+{m.detalles.length - 2}</span>
+                                  )}
+                                </div>
+                              </td>
+                              <td className="px-4 py-3 text-xs text-gray-600">{m.usuarioSolicitante?.nombre || '—'}</td>
+                              <td className="px-4 py-3">
+                                <div className="flex gap-1 justify-end" onClick={e => e.stopPropagation()}>
+                                  <button onClick={() => pdfSalida(m)} title="PDF Salida"
+                                    className="p-1.5 rounded-lg hover:bg-blue-50 text-blue-500 transition-colors">
+                                    <FileText className="w-3.5 h-3.5" />
+                                  </button>
+                                  {m.estado === 'aprobado' && (
+                                    <button onClick={() => pdfRecepcion(m)} title="PDF Recepción"
+                                      className="p-1.5 rounded-lg hover:bg-emerald-50 text-emerald-500 transition-colors">
+                                      <FileText className="w-3.5 h-3.5" />
+                                    </button>
+                                  )}
+                                </div>
+                              </td>
+                            </tr>
+                            {/* Fila expandida */}
+                            {isExp && (
+                              <tr key={`exp-${m.id}`} className="bg-blue-50/20">
+                                <td colSpan={7} className="px-6 py-3 border-b border-blue-100">
+                                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                                    <div>
+                                      <p className="text-[10px] font-semibold uppercase text-gray-400 mb-2">Productos</p>
+                                      <div className="space-y-1">
+                                        {m.detalles.map(d => (
+                                          <div key={d.id} className="flex items-center justify-between text-sm">
+                                            <span className="text-gray-700">{TIPO_EMOJI[d.producto.tipo]} {d.producto.nombre}</span>
+                                            <span className="font-bold text-blue-700">{d.cantidad} {d.producto.unidadMedida}</span>
+                                          </div>
+                                        ))}
+                                      </div>
+                                    </div>
+                                    <div className="space-y-1.5 text-xs text-gray-500">
+                                      {m.usuarioAprobador && <p>Aprobado por: <span className="font-semibold text-gray-700">{m.usuarioAprobador.nombre}</span></p>}
+                                      {m.transportadoPor && <p>Transportista: <span className="font-semibold text-gray-700">{m.transportadoPor}</span></p>}
+                                      {m.observaciones && <p>Obs.: <span className="italic text-gray-600">{m.observaciones}</span></p>}
+                                      {m.fechaAprobacion && <p>Aprobado: <span className="font-semibold text-gray-700">{formatDate(m.fechaAprobacion)}</span></p>}
+                                    </div>
+                                  </div>
+                                </td>
+                              </tr>
+                            )}
+                          </>
+                        );
+                      })}
+                    </tbody>
+                  </table>
+                </div>
+
+                {/* ─ Cards Mobile ─ */}
+                <div className="sm:hidden divide-y divide-gray-50">
+                  {paged.map(m => {
+                    const es = ESTADO_STYLE[m.estado] || { bg: '#f3f4f6', color: '#374151', label: m.estado };
+                    const isExp = expanded === m.id;
+                    return (
+                      <div key={m.id} className={`p-4 ${isExp ? 'bg-blue-50/20' : ''}`} onClick={() => setExpanded(isExp ? null : m.id)}>
+                        <div className="flex items-start justify-between gap-2 mb-2">
+                          <div className="flex items-center gap-2 flex-wrap">
+                            <span className="text-xs font-bold text-blue-700 bg-blue-100 px-1.5 py-0.5 rounded">#{m.id}</span>
+                            <span className="text-[10px] font-bold px-2 py-0.5 rounded-full" style={{ background: es.bg, color: es.color }}>{es.label}</span>
+                          </div>
+                          <span className="text-[10px] text-gray-400 whitespace-nowrap">{formatDate(m.fechaSolicitud)}</span>
+                        </div>
+                        <p className="text-xs text-gray-600">
+                          {m.almacenOrigen?.nombre || '—'} → {m.almacenDestino?.nombre || '—'}
+                        </p>
+                        <div className="flex flex-wrap gap-1 mt-1.5">
+                          {m.detalles.map(d => (
+                            <span key={d.id} className="text-[10px] font-semibold px-1.5 py-0.5 rounded bg-gray-100 text-gray-600">
+                              {TIPO_EMOJI[d.producto.tipo]} {d.producto.nombre} × {d.cantidad}
+                            </span>
+                          ))}
+                        </div>
+                        {isExp && (
+                          <div className="mt-3 flex gap-2" onClick={e => e.stopPropagation()}>
+                            <button onClick={() => pdfSalida(m)} className="flex-1 flex items-center justify-center gap-1 py-2 rounded-lg text-xs font-semibold bg-blue-50 text-blue-700">
+                              <FileText className="w-3.5 h-3.5" /> PDF Salida
+                            </button>
+                            {m.estado === 'aprobado' && (
+                              <button onClick={() => pdfRecepcion(m)} className="flex-1 flex items-center justify-center gap-1 py-2 rounded-lg text-xs font-semibold bg-emerald-50 text-emerald-700">
+                                <FileText className="w-3.5 h-3.5" /> PDF Recepción
+                              </button>
+                            )}
+                          </div>
+                        )}
+                      </div>
+                    );
+                  })}
+                </div>
+
+                {/* ─ Paginación ─ */}
+                {totalPages > 1 && (
+                  <div className="flex items-center justify-between px-4 py-3 border-t border-gray-100 bg-gray-50/50">
+                    <p className="text-xs text-gray-400">
+                      {((page - 1) * PER_PAGE) + 1}–{Math.min(page * PER_PAGE, filtered.length)} de {filtered.length}
+                    </p>
+                    <div className="flex items-center gap-1">
+                      <button onClick={() => setPage(p => Math.max(1, p - 1))} disabled={page === 1}
+                        className="p-1.5 rounded-lg disabled:opacity-30 hover:bg-gray-200 transition-colors">
+                        <ChevronLeft className="w-4 h-4" />
+                      </button>
+                      {Array.from({ length: Math.min(5, totalPages) }, (_, i) => {
+                        const start = Math.max(1, Math.min(page - 2, totalPages - 4));
+                        return start + i;
+                      }).map(p => (
+                        <button key={p} onClick={() => setPage(p)}
+                          className={`w-7 h-7 rounded-lg text-xs font-semibold transition-colors ${p === page ? 'bg-blue-600 text-white' : 'hover:bg-gray-200 text-gray-600'}`}>
+                          {p}
+                        </button>
+                      ))}
+                      <button onClick={() => setPage(p => Math.min(totalPages, p + 1))} disabled={page === totalPages}
+                        className="p-1.5 rounded-lg disabled:opacity-30 hover:bg-gray-200 transition-colors">
+                        <ChevronRight className="w-4 h-4" />
+                      </button>
+                    </div>
+                  </div>
+                )}
+              </>
+            )}
+          </div>
+
         </div>
       </div>
     </div>

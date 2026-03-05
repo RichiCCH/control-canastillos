@@ -2,295 +2,203 @@
 
 import { useState, useEffect } from 'react';
 import Navigation from '@/components/navigation';
+import { useSession } from 'next-auth/react';
 
-interface Almacen {
-  id: number;
-  nombre: string;
-  ubicacion: string | null;
-}
-
+interface Almacen { id: number; nombre: string; ubicacion: string | null; }
 interface InventarioItem {
-  id: number;
-  cantidad: number;
-  producto: {
-    id: number;
-    codigo: string;
-    nombre: string;
-    tipo: string;
-    unidadMedida: string;
-  };
+  id: number; cantidad: number;
+  producto: { id: number; codigo: string; nombre: string; tipo: string; unidadMedida: string; };
 }
+
+const TIPO_EMOJI: Record<string, string> = {
+  canastillo_negro: '⬛', canastillo_color: '🎨', cooler: '❄️', caja: '📦',
+};
+
+const STOCK_MAX: Record<string, number> = {
+  canastillo_negro: 500, canastillo_color: 400, cooler: 200, caja: 600,
+};
 
 export default function InventarioPage() {
+  const { data: session } = useSession();
   const [almacenes, setAlmacenes] = useState<Almacen[]>([]);
-  const [almacenSeleccionado, setAlmacenSeleccionado] = useState<string>('');
-  const [estadoFiltro, setEstadoFiltro] = useState<string>('todos');
+  const [almacenSeleccionado, setAlmacenSeleccionado] = useState('');
+  const [estadoFiltro, setEstadoFiltro] = useState('todos');
+  const [busqueda, setBusqueda] = useState('');
   const [inventario, setInventario] = useState<InventarioItem[]>([]);
   const [loading, setLoading] = useState(false);
+
+  // Almacenes que el usuario tiene asignados (vacío = admin, ve todos)
+  const almacenesUsuario: { id: number; nombre: string; esPrincipal: boolean }[] =
+    (session?.user as any)?.almacenes || [];
 
   useEffect(() => {
     fetchAlmacenes();
   }, []);
 
+  // Pre-seleccionar almacén al cargar la sesión y los almacenes
   useEffect(() => {
-    if (almacenSeleccionado) {
-      fetchInventario(parseInt(almacenSeleccionado));
-    }
+    if (almacenes.length === 0) return;
+    const lista = almacenesUsuario.length > 0
+      ? almacenes.filter(a => almacenesUsuario.some(u => u.id === a.id))
+      : almacenes; // admin ve todos
+    if (lista.length === 0) return;
+    // Pre-seleccionar el principal, o el único si solo hay uno
+    const principal = almacenesUsuario.find(u => u.esPrincipal);
+    const preselect = principal
+      ? String(principal.id)
+      : String(lista[0].id);
+    setAlmacenSeleccionado(preselect);
+  }, [session, almacenes]);
+
+  useEffect(() => {
+    if (almacenSeleccionado) fetchInventario(parseInt(almacenSeleccionado));
   }, [almacenSeleccionado]);
 
   const fetchAlmacenes = async () => {
-    try {
-      const response = await fetch('/api/almacenes');
-      const data = await response.json();
-      setAlmacenes(data);
-    } catch (error) {
-      console.error('Error al cargar almacenes:', error);
-    }
+    try { const r = await fetch('/api/almacenes'); setAlmacenes(await r.json()); } catch { }
   };
-
-  const fetchInventario = async (almacenId: number) => {
+  const fetchInventario = async (id: number) => {
     setLoading(true);
-    try {
-      const response = await fetch(`/api/inventario?almacenId=${almacenId}`);
-      const data = await response.json();
-      setInventario(data);
-    } catch (error) {
-      console.error('Error al cargar inventario:', error);
-    } finally {
-      setLoading(false);
-    }
+    try { const r = await fetch(`/api/inventario?almacenId=${id}`); setInventario(await r.json()); } catch { } finally { setLoading(false); }
   };
 
-  const totalUnidades = inventario.reduce((sum, item) => sum + item.cantidad, 0);
-
-  // Filtrar inventario según el estado
   const inventarioFiltrado = inventario.filter(item => {
-    if (estadoFiltro === 'todos') return true;
-    if (estadoFiltro === 'con_stock') return item.cantidad > 0;
-    if (estadoFiltro === 'sin_stock') return item.cantidad === 0;
+    if (estadoFiltro === 'con_stock' && item.cantidad === 0) return false;
+    if (estadoFiltro === 'sin_stock' && item.cantidad > 0) return false;
+    if (busqueda.trim()) {
+      const q = busqueda.toLowerCase();
+      return item.producto.nombre.toLowerCase().includes(q) || item.producto.codigo.toLowerCase().includes(q);
+    }
     return true;
   });
 
-  const getTipoIcon = (tipo: string) => {
-    const icons: Record<string, string> = {
-      canastillo_negro: '⬛',
-      canastillo_color: '🎨',
-      cooler: '❄️',
-      caja: '📦',
-    };
-    return icons[tipo] || '📦';
-  };
-
-  const getTipoBadge = (tipo: string) => {
-    const colors: Record<string, string> = {
-      canastillo_negro: 'bg-gray-100 text-gray-800',
-      canastillo_color: 'bg-purple-100 text-purple-800',
-      cooler: 'bg-blue-100 text-blue-800',
-      caja: 'bg-yellow-100 text-yellow-800',
-    };
-
-    const labels: Record<string, string> = {
-      canastillo_negro: 'Canastillo Negro',
-      canastillo_color: 'Canastillo Color',
-      cooler: 'Cooler',
-      caja: 'Caja',
-    };
-
-    return (
-      <span className={`px-3 py-1 rounded-full text-xs font-semibold ${colors[tipo] || 'bg-gray-100 text-gray-800'}`}>
-        {getTipoIcon(tipo)} {labels[tipo] || tipo}
-      </span>
-    );
-  };
-
-  const almacenActual = almacenes.find(a => a.id === parseInt(almacenSeleccionado));
-
   return (
-    <div className="min-h-screen" style={{ backgroundColor: '#e8e8e8' }}>
+    <div className="min-h-screen" style={{ background: 'var(--bg)' }}>
       <Navigation />
-      {/* Spacer for fixed navigation */}
-      <div className="h-20"></div>
-      <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 pt-8 pb-8">
-        {/* Header Section */}
-        <div className="mb-6">
-          <h1 className="text-2xl sm:text-3xl font-['Playfair_Display'] font-bold text-[#1F2937] mb-2">
-            Inventario por Almacén
-          </h1>
-          <p className="text-sm sm:text-base text-[#64748B]">
-            Consulta las existencias de productos en cada ubicación
-          </p>
-        </div>
+      <div className="main-content">
+        <div className="max-w-5xl mx-auto px-4 sm:px-6 lg:px-8 pt-6 lg:pt-8 space-y-6">
 
-        {/* Selection Card */}
-        <div className="card bg-white mb-6">
-          <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+          {/* Header */}
+          <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
             <div>
-              <label htmlFor="almacen" className="block text-sm font-semibold text-[#64748B] mb-2">
-                Seleccionar Almacén
-              </label>
-              <select
-                id="almacen"
-                value={almacenSeleccionado}
-                onChange={(e) => setAlmacenSeleccionado(e.target.value)}
-                className="input-field"
-              >
-                <option value="">Seleccionar almacén...</option>
-                {almacenes.map((almacen) => (
-                  <option key={almacen.id} value={almacen.id}>
-                    {almacen.nombre} {almacen.ubicacion ? `- ${almacen.ubicacion}` : ''}
-                  </option>
-                ))}
-              </select>
+              <h1 className="text-2xl font-bold lg:text-3xl text-gray-900">Inventario</h1>
+              <p className="text-sm mt-1" style={{ color: 'var(--text-3)' }}>Stock disponible por almacén</p>
             </div>
+            {/* Solo mostrar selector si hay más de 1 almacén disponible */}
+            {(() => {
+              const lista = almacenesUsuario.length > 0
+                ? almacenes.filter(a => almacenesUsuario.some(u => u.id === a.id))
+                : almacenes;
+              if (lista.length <= 1) return null;
+              return (
+                <select
+                  value={almacenSeleccionado}
+                  onChange={e => { setAlmacenSeleccionado(e.target.value); setBusqueda(''); }}
+                  className="input-field sm:w-52"
+                >
+                  {lista.map(a => (
+                    <option key={a.id} value={a.id}>{a.nombre}</option>
+                  ))}
+                </select>
+              );
+            })()}
+          </div>
 
-            <div>
-              <label htmlFor="estado" className="block text-sm font-semibold text-[#64748B] mb-2">
-                Estado
-              </label>
-              <select
-                id="estado"
-                value={estadoFiltro}
-                onChange={(e) => setEstadoFiltro(e.target.value)}
-                className="input-field"
-              >
-                <option value="todos">Todos los productos</option>
-                <option value="con_stock">Con stock disponible</option>
+          {/* Filters */}
+          {almacenSeleccionado && (
+            <div className="card-elevated p-4 flex flex-col sm:flex-row gap-3">
+              <div className="relative flex-1">
+                <svg className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4" style={{ color: 'var(--text-4)' }} fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z" />
+                </svg>
+                <input
+                  type="text"
+                  value={busqueda}
+                  onChange={e => setBusqueda(e.target.value)}
+                  placeholder="Buscar por nombre o código..."
+                  className="input-field pl-9"
+                />
+              </div>
+              <select value={estadoFiltro} onChange={e => setEstadoFiltro(e.target.value)} className="input-field sm:w-44">
+                <option value="todos">Todos</option>
+                <option value="con_stock">Con stock</option>
                 <option value="sin_stock">Sin stock</option>
               </select>
             </div>
+          )}
 
-            {almacenSeleccionado && almacenActual && (
-              <div className="bg-[#F9FAFB] rounded-lg p-4">
-                <p className="text-sm font-medium text-[#64748B] mb-1">Ubicación</p>
-                <p className="text-lg font-['Montserrat'] font-semibold text-[#1F2937]">
-                  {almacenActual.ubicacion || 'Sin ubicación especificada'}
-                </p>
-              </div>
-            )}
-          </div>
+          {/* Content */}
+          {loading ? (
+            <div className="card-elevated py-12 flex items-center justify-center gap-3">
+              <div className="animate-spin rounded-full h-8 w-8 border-b-2" style={{ borderColor: 'var(--primary)' }} />
+              <span style={{ color: 'var(--text-3)' }}>Cargando inventario...</span>
+            </div>
+          ) : !almacenSeleccionado ? (
+            <div className="card-elevated py-12 text-center">
+              <svg className="mx-auto h-14 w-14 mb-3" style={{ color: 'var(--text-4)' }} fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M20 7l-8-4-8 4m16 0l-8 4m8-4v10l-8 4m0-10L4 7m8 4v10M4 7v10l8 4" />
+              </svg>
+              <p style={{ color: 'var(--text-3)' }}>Selecciona un almacén para ver su inventario</p>
+            </div>
+          ) : inventario.length === 0 ? (
+            <div className="card-elevated py-12 text-center">
+              <svg className="mx-auto h-14 w-14 mb-3" style={{ color: 'var(--text-4)' }} fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M20 13V6a2 2 0 00-2-2H6a2 2 0 00-2 2v7m16 0v5a2 2 0 01-2 2H6a2 2 0 01-2-2v-5" />
+              </svg>
+              <p style={{ color: 'var(--text-3)' }}>No hay productos en este almacén</p>
+            </div>
+          ) : inventarioFiltrado.length === 0 ? (
+            <div className="card-elevated py-10 text-center">
+              <p style={{ color: 'var(--text-3)' }}>No hay productos que coincidan con los filtros</p>
+            </div>
+          ) : (
+            <div className="grid gap-3 sm:grid-cols-2">
+              {inventarioFiltrado.map(item => {
+                const max = STOCK_MAX[item.producto.tipo] || 500;
+                const pct = Math.min(Math.round((item.cantidad / max) * 100), 100);
+                const emoji = TIPO_EMOJI[item.producto.tipo] || '📦';
+                return (
+                  <div key={item.id} className="card-elevated p-4 space-y-3">
+                    <div className="flex items-center justify-between">
+                      <div className="min-w-0">
+                        <p className="font-medium text-sm text-gray-800 truncate">
+                          {emoji} {item.producto.nombre}
+                        </p>
+                        <p className="text-xs font-mono mt-0.5" style={{ color: 'var(--text-4)' }}>{item.producto.codigo}</p>
+                      </div>
+                      <p className="text-2xl font-bold ml-3 flex-shrink-0 font-sans">
+                        {item.cantidad}
+                      </p>
+                    </div>
+                    <div className="space-y-1">
+                      <div className="w-full bg-gray-100 rounded-full h-2 overflow-hidden">
+                        <div
+                          className="h-2 rounded-full transition-all"
+                          style={{
+                            width: `${pct}%`,
+                            background: pct > 60 ? '#10b981' : pct > 25 ? '#f59e0b' : '#f43f5e',
+                          }}
+                        />
+                      </div>
+                      <div className="flex justify-between items-center">
+                        <span className="text-[10px]" style={{ color: 'var(--text-4)' }}>{item.producto.unidadMedida}</span>
+                        <span className="text-[10px]" style={{ color: 'var(--text-4)' }}>{pct}% de capacidad</span>
+                      </div>
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
+          )}
+
+          {/* Summary */}
+          {inventario.length > 0 && (
+            <p className="text-xs text-center pb-2" style={{ color: 'var(--text-4)' }}>
+              {inventarioFiltrado.length} de {inventario.length} productos · {inventario.reduce((s, i) => s + i.cantidad, 0).toLocaleString()} unidades totales
+            </p>
+          )}
+
         </div>
-
-        {loading ? (
-          <div className="card bg-white">
-            <div className="flex items-center justify-center py-12">
-              <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-[#2563EB]"></div>
-              <p className="ml-4 text-[#64748B]">Cargando inventario...</p>
-            </div>
-          </div>
-        ) : !almacenSeleccionado ? (
-          <div className="card bg-white">
-            <div className="text-center py-12">
-              <svg className="mx-auto h-16 w-16 text-[#CBD5E1] mb-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M20 7l-8-4-8 4m16 0l-8 4m8-4v10l-8 4m0-10L4 7m8 4v10M4 7v10l8 4" />
-              </svg>
-              <p className="text-[#64748B] text-lg">Selecciona un almacén para ver su inventario</p>
-            </div>
-          </div>
-        ) : inventario.length === 0 ? (
-          <div className="card bg-white">
-            <div className="text-center py-12">
-              <svg className="mx-auto h-16 w-16 text-[#CBD5E1] mb-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M20 13V6a2 2 0 00-2-2H6a2 2 0 00-2 2v7m16 0v5a2 2 0 01-2 2H6a2 2 0 01-2-2v-5m16 0h-2.586a1 1 0 00-.707.293l-2.414 2.414a1 1 0 01-.707.293h-3.172a1 1 0 01-.707-.293l-2.414-2.414A1 1 0 006.586 13H4" />
-              </svg>
-              <p className="text-[#64748B] text-lg">No hay productos en este almacén</p>
-            </div>
-          </div>
-        ) : (
-          <>
-            {/* Inventory Table */}
-            <div className="card bg-white">
-              <div className="flex justify-between items-center mb-6">
-                <h3 className="text-2xl font-['Montserrat'] font-bold text-[#1F2937]">
-                  Productos en Stock
-                </h3>
-                <div className="text-sm text-[#64748B]">
-                  Mostrando <span className="font-bold text-[#1F2937]">{inventarioFiltrado.length}</span> de <span className="font-bold text-[#1F2937]">{inventario.length}</span> productos
-                </div>
-              </div>
-              {inventarioFiltrado.length === 0 ? (
-                <div className="text-center py-12">
-                  <svg className="mx-auto h-16 w-16 text-[#CBD5E1] mb-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M3 4a1 1 0 011-1h16a1 1 0 011 1v2.586a1 1 0 01-.293.707l-6.414 6.414a1 1 0 00-.293.707V17l-4 4v-6.586a1 1 0 00-.293-.707L3.293 7.293A1 1 0 013 6.586V4z" />
-                  </svg>
-                  <p className="text-[#64748B] text-lg">No hay productos que coincidan con el filtro seleccionado</p>
-                </div>
-              ) : (
-                <div className="overflow-x-auto">
-                  <table className="w-full">
-                    <thead>
-                      <tr className="table-header border-b-2 border-[#E5E7EB]">
-                        <th className="text-left py-4 px-4">Código</th>
-                        <th className="text-left py-4 px-4">Producto</th>
-                        <th className="text-left py-4 px-4">Tipo</th>
-                        <th className="text-right py-4 px-4">Cantidad</th>
-                        <th className="text-left py-4 px-4">Unidad</th>
-                        <th className="text-center py-4 px-4">Estado</th>
-                      </tr>
-                    </thead>
-                    <tbody>
-                      {inventarioFiltrado.map((item) => (
-                      <tr key={item.id} className="border-b border-[#E5E7EB] hover:bg-[#F9FAFB] transition-colors">
-                        <td className="py-4 px-4">
-                          <span className="font-mono font-semibold text-[#2563EB] bg-blue-50 px-3 py-1 rounded">
-                            {item.producto.codigo}
-                          </span>
-                        </td>
-                        <td className="py-4 px-4">
-                          <span className="font-medium text-[#1F2937]">
-                            {item.producto.nombre}
-                          </span>
-                        </td>
-                        <td className="py-4 px-4">
-                          {getTipoBadge(item.producto.tipo)}
-                        </td>
-                        <td className="py-4 px-4 text-right">
-                          <span className="text-2xl font-['Montserrat'] font-bold text-[#1F2937]">
-                            {item.cantidad}
-                          </span>
-                        </td>
-                        <td className="py-4 px-4">
-                          <span className="text-[#64748B] text-sm">
-                            {item.producto.unidadMedida}
-                          </span>
-                        </td>
-                        <td className="py-4 px-4 text-center">
-                          {item.cantidad > 0 ? (
-                            <span className="badge-success">
-                              ✓ Disponible
-                            </span>
-                          ) : (
-                            <span className="badge-error">
-                              ✗ Sin stock
-                            </span>
-                          )}
-                        </td>
-                      </tr>
-                      ))}
-                    </tbody>
-                  </table>
-                </div>
-              )}
-            </div>
-          </>
-        )}
-
-        {/* Info Banner */}
-        {inventario.length > 0 && (
-          <div className="mt-6 bg-blue-50 border-l-4 border-[#2563EB] p-4 rounded-lg">
-            <div className="flex">
-              <div className="flex-shrink-0">
-                <svg className="h-5 w-5 text-[#2563EB]" fill="currentColor" viewBox="0 0 20 20">
-                  <path fillRule="evenodd" d="M18 10a8 8 0 11-16 0 8 8 0 0116 0zm-7-4a1 1 0 11-2 0 1 1 0 012 0zM9 9a1 1 0 000 2v3a1 1 0 001 1h1a1 1 0 100-2v-3a1 1 0 00-1-1H9z" clipRule="evenodd" />
-                </svg>
-              </div>
-              <div className="ml-3">
-                <p className="text-sm text-blue-800">
-                  <span className="font-semibold">Inventario actualizado.</span> Los datos reflejan el stock actual en tiempo real.
-                </p>
-              </div>
-            </div>
-          </div>
-        )}
       </div>
     </div>
   );

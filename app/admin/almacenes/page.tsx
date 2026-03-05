@@ -145,11 +145,9 @@ export default function AdminAlmacenesPage() {
 
   if (loading) {
     return (
-      <div className="min-h-screen" style={{ backgroundColor: '#e8e8e8' }}>
+      <div className="main-content" style={{ background: "var(--bg)" }}>
         <Navigation />
-        {/* Spacer for fixed navigation */}
-        <div className="h-20"></div>
-        <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 pt-8 pb-8">
+        <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 pt-8 pb-24 lg:pb-8">
           <div className="card bg-white">
             <div className="flex items-center justify-center py-12">
               <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-[#2563EB]"></div>
@@ -164,13 +162,11 @@ export default function AdminAlmacenesPage() {
   const totalUsuariosAsignados = almacenes.reduce((sum, a) => sum + (a.usuariosAsignados || 0), 0);
 
   return (
-    <div className="min-h-screen" style={{ backgroundColor: '#e8e8e8' }}>
+    <div className="main-content" style={{ background: "var(--bg)" }}>
       <Navigation />
-      {/* Spacer for fixed navigation */}
-      <div className="h-20"></div>
-      <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 pt-8 pb-8">
+      <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 pt-8 pb-24 lg:pb-8">
         {/* Header Section */}
-        <div className="mb-6 flex justify-between items-center">
+        <div className="mb-6 flex flex-col sm:flex-row sm:justify-between sm:items-center gap-4">
           <div>
             <h1 className="text-2xl sm:text-3xl font-['Playfair_Display'] font-bold text-[#1F2937] mb-2">
               Administración de Almacenes
@@ -181,7 +177,7 @@ export default function AdminAlmacenesPage() {
           </div>
           <button
             onClick={() => handleOpenModal()}
-            className="bg-[#2563EB] text-white px-6 py-3 rounded-lg font-semibold hover:bg-[#1E40AF] transition-colors flex items-center gap-2"
+            className="bg-[#2563EB] text-white px-6 py-3 rounded-lg font-semibold hover:bg-[#1E40AF] transition-colors flex items-center justify-center gap-2 w-full sm:w-auto"
           >
             <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
               <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4v16m8-8H4" />
@@ -235,22 +231,22 @@ export default function AdminAlmacenesPage() {
             <table className="min-w-full divide-y divide-gray-200">
               <thead className="bg-gray-50">
                 <tr>
-                  <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                  <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
                     Almacén
                   </th>
-                  <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                  <th className="hidden sm:table-cell px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
                     Ubicación
                   </th>
-                  <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                  <th className="hidden md:table-cell px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
                     Descripción
                   </th>
-                  <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                  <th className="hidden sm:table-cell px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
                     Usuarios
                   </th>
-                  <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                  <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
                     Estado
                   </th>
-                  <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                  <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
                     Acciones
                   </th>
                 </tr>
@@ -258,30 +254,30 @@ export default function AdminAlmacenesPage() {
               <tbody className="bg-white divide-y divide-gray-200">
                 {almacenes.map((almacen) => (
                   <tr key={almacen.id} className={almacen.activo === 0 ? 'bg-gray-50 opacity-60' : ''}>
-                    <td className="px-6 py-4 whitespace-nowrap">
+                    <td className="px-4 py-3 whitespace-nowrap">
                       <div className="text-sm font-medium text-gray-900">{almacen.nombre}</div>
-                      <div className="text-sm text-gray-500">ID: {almacen.id}</div>
+                      <div className="text-xs text-gray-500 sm:hidden">{almacen.ubicacion || <span className="italic">Sin ubicación</span>}</div>
                     </td>
-                    <td className="px-6 py-4 whitespace-nowrap">
+                    <td className="hidden sm:table-cell px-4 py-3 whitespace-nowrap">
                       <div className="text-sm text-gray-900">
                         {almacen.ubicacion || (
                           <span className="text-gray-400 italic">Sin ubicación</span>
                         )}
                       </div>
                     </td>
-                    <td className="px-6 py-4">
+                    <td className="hidden md:table-cell px-4 py-3">
                       <div className="text-sm text-gray-900 max-w-xs truncate">
                         {almacen.descripcion || (
                           <span className="text-gray-400 italic">Sin descripción</span>
                         )}
                       </div>
                     </td>
-                    <td className="px-6 py-4 whitespace-nowrap">
+                    <td className="hidden sm:table-cell px-4 py-3 whitespace-nowrap">
                       <div className="text-sm text-gray-900">
                         {almacen.usuariosAsignados || 0}
                       </div>
                     </td>
-                    <td className="px-6 py-4 whitespace-nowrap">
+                    <td className="px-4 py-3 whitespace-nowrap">
                       <span
                         className={`px-2 py-1 rounded text-xs font-semibold ${
                           almacen.activo === 1
@@ -289,26 +285,28 @@ export default function AdminAlmacenesPage() {
                             : 'bg-gray-100 text-gray-800'
                         }`}
                       >
-                        {almacen.activo === 1 ? 'ACTIVO' : 'INACTIVO'}
+                        {almacen.activo === 1 ? 'ACTIVO' : 'INACT.'}
                       </span>
                     </td>
-                    <td className="px-6 py-4 whitespace-nowrap text-sm font-medium">
-                      <button
-                        onClick={() => handleOpenModal(almacen)}
-                        className="text-[#2563EB] hover:text-[#1E40AF] mr-4"
-                      >
-                        Editar
-                      </button>
-                      <button
-                        onClick={() => handleToggleActivo(almacen)}
-                        className={
-                          almacen.activo === 1
-                            ? 'text-red-600 hover:text-red-800'
-                            : 'text-green-600 hover:text-green-800'
-                        }
-                      >
-                        {almacen.activo === 1 ? 'Desactivar' : 'Activar'}
-                      </button>
+                    <td className="px-4 py-3 whitespace-nowrap text-sm font-medium">
+                      <div className="flex flex-col sm:flex-row gap-1 sm:gap-3">
+                        <button
+                          onClick={() => handleOpenModal(almacen)}
+                          className="text-[#2563EB] hover:text-[#1E40AF] py-1"
+                        >
+                          Editar
+                        </button>
+                        <button
+                          onClick={() => handleToggleActivo(almacen)}
+                          className={`py-1 ${
+                            almacen.activo === 1
+                              ? 'text-red-600 hover:text-red-800'
+                              : 'text-green-600 hover:text-green-800'
+                          }`}
+                        >
+                          {almacen.activo === 1 ? 'Desactivar' : 'Activar'}
+                        </button>
+                      </div>
                     </td>
                   </tr>
                 ))}
@@ -320,7 +318,7 @@ export default function AdminAlmacenesPage() {
         {/* Modal */}
         {showModal && (
           <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4">
-            <div className="bg-white rounded-lg max-w-md w-full p-6">
+            <div className="bg-white rounded-lg max-w-md w-full p-4 sm:p-6 max-h-[90vh] overflow-y-auto">
               <h2 className="text-2xl font-bold mb-4">
                 {editingAlmacen ? 'Editar Almacén' : 'Nuevo Almacén'}
               </h2>

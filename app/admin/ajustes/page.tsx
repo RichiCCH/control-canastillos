@@ -454,10 +454,9 @@ export default function AjustesInventarioPage() {
 
   if (loading) {
     return (
-      <div className="min-h-screen" style={{ backgroundColor: '#e8e8e8' }}>
+      <div className="main-content" style={{ background: "var(--bg)" }}>
         <Navigation />
-        <div className="h-20"></div>
-        <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 pt-8 pb-8">
+        <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 pt-8 pb-24 lg:pb-8">
           <div className="card bg-white">
             <div className="flex items-center justify-center py-12">
               <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-[#2563EB]"></div>
@@ -474,10 +473,9 @@ export default function AjustesInventarioPage() {
   const totalBajas = ajustes.filter((a) => a.tipoMovimiento === 'baja').length;
 
   return (
-    <div className="min-h-screen" style={{ backgroundColor: '#e8e8e8' }}>
+    <div className="main-content" style={{ background: "var(--bg)" }}>
       <Navigation />
-      <div className="h-20"></div>
-      <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 pt-8 pb-8">
+      <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 pt-8 pb-24 lg:pb-8">
         {/* Header Section */}
         <div className="mb-6 flex justify-between items-center">
           <div>

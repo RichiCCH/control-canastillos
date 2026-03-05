@@ -46,9 +46,18 @@ export const users = pgTable('users', {
   id: serial('id').primaryKey(),
   nombre: varchar('nombre', { length: 100 }).notNull(),
   email: varchar('email', { length: 255 }).unique(),
-  password: varchar('password', { length: 255 }), // Para uso futuro
-  almacenId: integer('almacen_id').references(() => almacenes.id),
+  password: varchar('password', { length: 255 }),
+  almacenId: integer('almacen_id').references(() => almacenes.id), // Almacén principal/defecto
   rol: varchar('rol', { length: 50 }),
+  createdAt: timestamp('created_at').defaultNow().notNull(),
+});
+
+// Tabla pivote: un usuario puede pertenecer a múltiples almacenes
+export const usuariosAlmacenes = pgTable('usuarios_almacenes', {
+  id: serial('id').primaryKey(),
+  usuarioId: integer('usuario_id').references(() => users.id, { onDelete: 'cascade' }).notNull(),
+  almacenId: integer('almacen_id').references(() => almacenes.id, { onDelete: 'cascade' }).notNull(),
+  esPrincipal: integer('es_principal').default(0).notNull(), // 1 = almacén principal del usuario
   createdAt: timestamp('created_at').defaultNow().notNull(),
 });
 
@@ -128,9 +137,15 @@ export const usersRelations = relations(users, ({ one, many }) => ({
     fields: [users.almacenId],
     references: [almacenes.id],
   }),
+  almacenesAsignados: many(usuariosAlmacenes),
   movimientosSolicitados: many(movimientos, { relationName: 'usuario_solicitante' }),
   movimientosAprobados: many(movimientos, { relationName: 'usuario_aprobador' }),
   notificaciones: many(notificaciones),
+}));
+
+export const usuariosAlmacenesRelations = relations(usuariosAlmacenes, ({ one }) => ({
+  usuario: one(users, { fields: [usuariosAlmacenes.usuarioId], references: [users.id] }),
+  almacen: one(almacenes, { fields: [usuariosAlmacenes.almacenId], references: [almacenes.id] }),
 }));
 
 export const productosRelations = relations(productos, ({ many }) => ({

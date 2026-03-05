@@ -2,6 +2,7 @@
 
 import { useState, useEffect, useRef } from 'react';
 import { useSession } from 'next-auth/react';
+import { Bell, X, Check, Package, CheckCircle, XCircle, Info, ArrowRight } from 'lucide-react';
 
 interface Notificacion {
   id: number;
@@ -13,7 +14,11 @@ interface Notificacion {
   movimientoId: number | null;
 }
 
-export default function NotificationsBell() {
+interface Props {
+  onOpenRecepciones?: () => void;
+}
+
+export default function NotificationsBell({ onOpenRecepciones }: Props) {
   const { data: session } = useSession();
   const [notificaciones, setNotificaciones] = useState<Notificacion[]>([]);
   const [noLeidas, setNoLeidas] = useState(0);
@@ -21,206 +26,236 @@ export default function NotificationsBell() {
   const [loading, setLoading] = useState(false);
   const dropdownRef = useRef<HTMLDivElement>(null);
 
-  // Cerrar dropdown al hacer click fuera
   useEffect(() => {
-    function handleClickOutside(event: MouseEvent) {
-      if (dropdownRef.current && !dropdownRef.current.contains(event.target as Node)) {
+    function handleClickOutside(e: MouseEvent) {
+      if (dropdownRef.current && !dropdownRef.current.contains(e.target as Node)) {
         setIsOpen(false);
       }
     }
-
     document.addEventListener('mousedown', handleClickOutside);
     return () => document.removeEventListener('mousedown', handleClickOutside);
   }, []);
 
-  // Cargar notificaciones
   const fetchNotificaciones = async () => {
     if (!session?.user) return;
-
     try {
-      const response = await fetch('/api/notificaciones');
-      if (response.ok) {
-        const data = await response.json();
+      const r = await fetch('/api/notificaciones');
+      if (r.ok) {
+        const data = await r.json();
         setNotificaciones(data);
         setNoLeidas(data.filter((n: Notificacion) => !n.leida).length);
       }
-    } catch (error) {
-      console.error('Error al cargar notificaciones:', error);
-    }
+    } catch { }
   };
 
-  // Cargar notificaciones al montar y cada 30 segundos
   useEffect(() => {
     fetchNotificaciones();
-    const interval = setInterval(fetchNotificaciones, 30000); // 30 segundos
+    const interval = setInterval(fetchNotificaciones, 30000);
     return () => clearInterval(interval);
   }, [session]);
 
   const handleToggle = () => {
-    setIsOpen(!isOpen);
-    if (!isOpen) {
-      fetchNotificaciones();
-    }
+    setIsOpen(v => !v);
+    if (!isOpen) fetchNotificaciones();
   };
 
   const marcarComoLeida = async (id: number) => {
     try {
-      const response = await fetch(`/api/notificaciones/${id}`, {
-        method: 'PATCH',
-      });
-
-      if (response.ok) {
-        fetchNotificaciones();
-      }
-    } catch (error) {
-      console.error('Error al marcar notificación:', error);
-    }
+      await fetch(`/api/notificaciones/${id}`, { method: 'PATCH' });
+      fetchNotificaciones();
+    } catch { }
   };
 
   const marcarTodasComoLeidas = async () => {
     setLoading(true);
     try {
-      const response = await fetch('/api/notificaciones', {
-        method: 'PATCH',
-      });
+      await fetch('/api/notificaciones', { method: 'PATCH' });
+      fetchNotificaciones();
+    } finally { setLoading(false); }
+  };
 
-      if (response.ok) {
-        fetchNotificaciones();
+  const formatFecha = (fecha: string) => {
+    const d = new Date(fecha);
+    const diff = Date.now() - d.getTime();
+    const mins = Math.floor(diff / 60000);
+    const hrs = Math.floor(mins / 60);
+    const days = Math.floor(hrs / 24);
+    if (mins < 1) return 'Ahora';
+    if (mins < 60) return `${mins}m`;
+    if (hrs < 24) return `${hrs}h`;
+    if (days < 7) return `${days}d`;
+    return d.toLocaleDateString('es-ES', { day: '2-digit', month: 'short' });
+  };
+
+  /* ── Ícono según tipo ── */
+  const TipoIcon = ({ tipo }: { tipo: string }) => {
+    if (tipo === 'nuevo_movimiento') return <Package className="w-4 h-4 text-blue-500" />;
+    if (tipo === 'movimiento_aprobado') return <CheckCircle className="w-4 h-4 text-emerald-500" />;
+    if (tipo === 'movimiento_rechazado') return <XCircle className="w-4 h-4 text-red-500" />;
+    return <Info className="w-4 h-4 text-gray-400" />;
+  };
+
+  const TipoBg: Record<string, string> = {
+    nuevo_movimiento: 'bg-blue-50',
+    movimiento_aprobado: 'bg-emerald-50',
+    movimiento_rechazado: 'bg-red-50',
+  };
+
+  /* ── Acción primaria según tipo ── */
+  const handleAccion = (notif: Notificacion) => {
+    if (!notif.leida) marcarComoLeida(notif.id);
+    setIsOpen(false);
+
+    if (notif.tipo === 'nuevo_movimiento') {
+      // Abrir el modal de recepciones si está disponible, sino navegar
+      if (onOpenRecepciones) {
+        onOpenRecepciones();
+      } else {
+        window.location.href = '/recepciones';
       }
-    } catch (error) {
-      console.error('Error al marcar todas:', error);
-    } finally {
-      setLoading(false);
+    } else if (notif.tipo === 'movimiento_rechazado') {
+      window.location.href = '/mis-movimientos';
+    } else if (notif.tipo === 'movimiento_aprobado') {
+      window.location.href = '/inventario';
     }
   };
 
-  const formatearFecha = (fecha: string) => {
-    const date = new Date(fecha);
-    const ahora = new Date();
-    const diffMs = ahora.getTime() - date.getTime();
-    const diffMins = Math.floor(diffMs / 60000);
-    const diffHoras = Math.floor(diffMins / 60);
-    const diffDias = Math.floor(diffHoras / 24);
-
-    if (diffMins < 1) return 'Ahora';
-    if (diffMins < 60) return `Hace ${diffMins} min`;
-    if (diffHoras < 24) return `Hace ${diffHoras}h`;
-    if (diffDias < 7) return `Hace ${diffDias}d`;
-    return date.toLocaleDateString('es-ES', { day: '2-digit', month: 'short' });
-  };
-
-  const getIconoTipo = (tipo: string) => {
-    switch (tipo) {
-      case 'nuevo_movimiento':
-        return (
-          <svg className="w-5 h-5 text-blue-500" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M20 13V6a2 2 0 00-2-2H6a2 2 0 00-2 2v7m16 0v5a2 2 0 01-2 2H6a2 2 0 01-2-2v-5m16 0h-2.586a1 1 0 00-.707.293l-2.414 2.414a1 1 0 01-.707.293h-3.172a1 1 0 01-.707-.293l-2.414-2.414A1 1 0 006.586 13H4" />
-          </svg>
-        );
-      case 'movimiento_aprobado':
-        return (
-          <svg className="w-5 h-5 text-green-500" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z" />
-          </svg>
-        );
-      case 'movimiento_rechazado':
-        return (
-          <svg className="w-5 h-5 text-red-500" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M10 14l2-2m0 0l2-2m-2 2l-2-2m2 2l2 2m7-2a9 9 0 11-18 0 9 9 0 0118 0z" />
-          </svg>
-        );
-      default:
-        return (
-          <svg className="w-5 h-5 text-gray-500" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
-          </svg>
-        );
-    }
+  const getAccionLabel = (tipo: string) => {
+    if (tipo === 'nuevo_movimiento') return 'Ver recepciones';
+    if (tipo === 'movimiento_rechazado') return 'Ver movimiento';
+    if (tipo === 'movimiento_aprobado') return 'Ver inventario';
+    return null;
   };
 
   if (!session?.user) return null;
 
   return (
     <div className="relative" ref={dropdownRef}>
-      {/* Botón de campana */}
+      {/* ── Campana ── */}
       <button
         onClick={handleToggle}
-        className="relative p-2.5 text-gray-800 hover:bg-gray-200 rounded-lg transition-colors border border-gray-300"
+        className="relative p-2 rounded-xl text-muted-foreground hover:bg-muted/60 transition-colors"
         aria-label="Notificaciones"
       >
-        <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24" strokeWidth={2.5}>
-          <path strokeLinecap="round" strokeLinejoin="round" d="M15 17h5l-1.405-1.405A2.032 2.032 0 0118 14.158V11a6.002 6.002 0 00-4-5.659V5a2 2 0 10-4 0v.341C7.67 6.165 6 8.388 6 11v3.159c0 .538-.214 1.055-.595 1.436L4 17h5m6 0v1a3 3 0 11-6 0v-1m6 0H9" />
-        </svg>
+        <Bell className="w-5 h-5" />
         {noLeidas > 0 && (
-          <span className="absolute -top-1 -right-1 inline-flex items-center justify-center min-w-[20px] h-5 px-1.5 text-xs font-bold leading-none text-white bg-red-600 rounded-full border-2 border-gray-100">
+          <span className="absolute -top-0.5 -right-0.5 flex h-4 w-4 items-center justify-center rounded-full bg-red-500 text-[9px] font-bold text-white ring-1 ring-card">
             {noLeidas > 9 ? '9+' : noLeidas}
           </span>
         )}
       </button>
 
-      {/* Dropdown */}
+      {/* ── Panel ── */}
       {isOpen && (
-        <div className="absolute right-0 mt-2 w-96 bg-white rounded-lg shadow-lg border border-gray-200 z-50 max-h-[500px] overflow-hidden flex flex-col">
-          {/* Header */}
-          <div className="px-4 py-3 border-b border-gray-200 flex items-center justify-between">
-            <h3 className="text-lg font-semibold text-gray-900">Notificaciones</h3>
-            {noLeidas > 0 && (
-              <button
-                onClick={marcarTodasComoLeidas}
-                disabled={loading}
-                className="text-sm text-[#2563EB] hover:text-[#1e40af] font-medium disabled:opacity-50"
-              >
-                Marcar todas como leídas
-              </button>
-            )}
-          </div>
+        <>
+          {/* Backdrop mobile */}
+          <div
+            className="fixed inset-0 bg-black/20 z-40 sm:hidden"
+            onClick={() => setIsOpen(false)}
+          />
 
-          {/* Lista de notificaciones */}
-          <div className="overflow-y-auto flex-1">
-            {notificaciones.length === 0 ? (
-              <div className="px-4 py-8 text-center text-gray-500">
-                <svg className="w-12 h-12 mx-auto mb-3 text-gray-300" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 17h5l-1.405-1.405A2.032 2.032 0 0118 14.158V11a6.002 6.002 0 00-4-5.659V5a2 2 0 10-4 0v.341C7.67 6.165 6 8.388 6 11v3.159c0 .538-.214 1.055-.595 1.436L4 17h5m6 0v1a3 3 0 11-6 0v-1m6 0H9" />
-                </svg>
-                <p className="text-sm">No tienes notificaciones</p>
+          <div className="
+            z-50 bg-white border border-border/60 shadow-2xl flex flex-col overflow-hidden
+            fixed left-3 right-3 top-[4.5rem] rounded-2xl max-h-[75vh]
+            sm:absolute sm:inset-auto sm:right-0 sm:top-full sm:mt-2 sm:w-96 sm:max-h-[520px] sm:rounded-xl sm:left-auto
+          ">
+            {/* Header */}
+            <div className="flex items-center justify-between px-4 py-3 border-b border-border/50 flex-shrink-0">
+              <div className="flex items-center gap-2">
+                <Bell className="w-4 h-4 text-muted-foreground" />
+                <span className="text-sm font-bold text-foreground">Notificaciones</span>
+                {noLeidas > 0 && (
+                  <span className="text-[10px] font-bold px-1.5 py-0.5 rounded-full bg-red-100 text-red-600">
+                    {noLeidas}
+                  </span>
+                )}
               </div>
-            ) : (
-              <div className="divide-y divide-gray-100">
-                {notificaciones.map((notif) => (
-                  <div
-                    key={notif.id}
-                    onClick={() => !notif.leida && marcarComoLeida(notif.id)}
-                    className={`px-4 py-3 hover:bg-gray-50 cursor-pointer transition-colors ${
-                      !notif.leida ? 'bg-blue-50' : ''
-                    }`}
+              <div className="flex items-center gap-1">
+                {noLeidas > 0 && (
+                  <button
+                    onClick={marcarTodasComoLeidas}
+                    disabled={loading}
+                    className="text-xs text-blue-600 hover:text-blue-700 font-medium disabled:opacity-50 flex items-center gap-1 px-2 py-1 rounded-lg hover:bg-blue-50 transition-colors"
                   >
-                    <div className="flex gap-3">
-                      <div className="flex-shrink-0 mt-1">
-                        {getIconoTipo(notif.tipo)}
-                      </div>
-                      <div className="flex-1 min-w-0">
-                        <div className="flex items-start justify-between gap-2">
-                          <p className="text-sm font-medium text-gray-900">
-                            {notif.titulo}
-                          </p>
-                          {!notif.leida && (
-                            <span className="flex-shrink-0 w-2 h-2 bg-blue-600 rounded-full mt-1"></span>
-                          )}
-                        </div>
-                        <p className="mt-1 text-sm text-gray-600 line-clamp-2">
-                          {notif.mensaje}
-                        </p>
-                        <p className="mt-1 text-xs text-gray-400">
-                          {formatearFecha(notif.createdAt)}
-                        </p>
-                      </div>
-                    </div>
-                  </div>
-                ))}
+                    <Check className="w-3 h-3" /> Leídas
+                  </button>
+                )}
+                <button
+                  onClick={() => setIsOpen(false)}
+                  className="p-1.5 rounded-lg text-muted-foreground hover:bg-muted/60 sm:hidden"
+                >
+                  <X className="w-4 h-4" />
+                </button>
               </div>
-            )}
+            </div>
+
+            {/* Lista */}
+            <div className="overflow-y-auto flex-1">
+              {notificaciones.length === 0 ? (
+                <div className="flex flex-col items-center justify-center py-10 gap-2">
+                  <Bell className="w-10 h-10 text-gray-200" />
+                  <p className="text-sm text-gray-400">Sin notificaciones</p>
+                </div>
+              ) : (
+                <div>
+                  {notificaciones.map(notif => {
+                    const accionLabel = getAccionLabel(notif.tipo);
+                    return (
+                      <div
+                        key={notif.id}
+                        className={`px-4 py-3 border-b border-gray-50 last:border-0 transition-colors ${!notif.leida ? 'bg-blue-50/50' : 'bg-white hover:bg-gray-50'
+                          }`}
+                      >
+                        <div className="flex gap-3">
+                          {/* Ícono */}
+                          <div className={`flex-shrink-0 h-8 w-8 rounded-lg flex items-center justify-center mt-0.5 ${TipoBg[notif.tipo] || 'bg-gray-100'
+                            }`}>
+                            <TipoIcon tipo={notif.tipo} />
+                          </div>
+
+                          {/* Texto */}
+                          <div className="flex-1 min-w-0">
+                            <div className="flex items-start justify-between gap-2">
+                              <p className="text-sm font-semibold text-gray-900 leading-tight">
+                                {notif.titulo}
+                              </p>
+                              <div className="flex items-center gap-1.5 flex-shrink-0">
+                                {!notif.leida && (
+                                  <span className="h-2 w-2 rounded-full bg-blue-500 flex-shrink-0 mt-1" />
+                                )}
+                                <span className="text-[10px] text-gray-400">{formatFecha(notif.createdAt)}</span>
+                              </div>
+                            </div>
+                            <p className="text-xs text-gray-500 mt-0.5 line-clamp-2">{notif.mensaje}</p>
+
+                            {/* ── Botón de acción ── */}
+                            {accionLabel && (
+                              <button
+                                onClick={() => handleAccion(notif)}
+                                className="mt-2 flex items-center gap-1 text-xs font-semibold transition-colors rounded-lg px-2.5 py-1"
+                                style={{
+                                  color: notif.tipo === 'movimiento_rechazado' ? '#e11d48'
+                                    : notif.tipo === 'movimiento_aprobado' ? '#059669'
+                                      : '#2563eb',
+                                  background: notif.tipo === 'movimiento_rechazado' ? '#fff1f2'
+                                    : notif.tipo === 'movimiento_aprobado' ? '#f0fdf4'
+                                      : '#eff6ff',
+                                }}
+                              >
+                                <ArrowRight className="w-3 h-3" />
+                                {accionLabel}
+                              </button>
+                            )}
+                          </div>
+                        </div>
+                      </div>
+                    );
+                  })}
+                </div>
+              )}
+            </div>
           </div>
-        </div>
+        </>
       )}
     </div>
   );

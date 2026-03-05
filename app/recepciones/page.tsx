@@ -7,29 +7,13 @@ import Navigation from '@/components/navigation';
 import { generarPDFRecepcion } from '@/lib/utils/pdf';
 
 interface Movimiento {
-  id: number;
-  estado: string;
-  observaciones: string | null;
-  fechaSolicitud: string;
-  almacenOrigen: {
-    id: number;
-    nombre: string;
-  };
-  usuarioSolicitante: {
-    id: number;
-    nombre: string;
-  };
-  detalles: Array<{
-    id: number;
-    cantidad: number;
-    producto: {
-      id: number;
-      codigo: string;
-      nombre: string;
-      tipo: string;
-    };
-  }>;
+  id: number; estado: string; observaciones: string | null; fechaSolicitud: string;
+  almacenOrigen: { id: number; nombre: string; };
+  usuarioSolicitante: { id: number; nombre: string; };
+  detalles: Array<{ id: number; cantidad: number; producto: { id: number; codigo: string; nombre: string; tipo: string; }; }>;
 }
+
+const TIPO_EMOJI: Record<string, string> = { canastillo_negro: '⬛', canastillo_color: '🎨', cooler: '❄️', caja: '📦' };
 
 export default function RecepcionesPage() {
   const router = useRouter();
@@ -40,396 +24,226 @@ export default function RecepcionesPage() {
   const [message, setMessage] = useState<{ type: 'success' | 'error'; text: string } | null>(null);
   const [userAlmacenId, setUserAlmacenId] = useState<number | null>(null);
   const [almacenes, setAlmacenes] = useState<Array<{ id: number; nombre: string }>>([]);
+  const [modalRechazo, setModalRechazo] = useState<{ open: boolean; movimientoId: number | null }>({ open: false, movimientoId: null });
+  const [motivoRechazo, setMotivoRechazo] = useState('');
 
   useEffect(() => {
     if (status === 'loading') return;
-
-    if (status === 'unauthenticated') {
-      router.push('/login');
-      return;
-    }
-
+    if (status === 'unauthenticated') { router.push('/login'); return; }
     if (session?.user) {
       const almacenId = (session.user as any).almacenId;
       fetchAlmacenes();
-      if (almacenId) {
-        setUserAlmacenId(almacenId);
-        fetchMovimientos(almacenId);
-      } else {
-        setLoading(false);
-        setMessage({ type: 'error', text: 'Tu usuario no tiene un almacén asignado' });
-      }
+      if (almacenId) { setUserAlmacenId(almacenId); fetchMovimientos(almacenId); }
+      else { setLoading(false); setMessage({ type: 'error', text: 'Tu usuario no tiene un almacén asignado' }); }
     }
   }, [session, status, router]);
 
   const fetchAlmacenes = async () => {
-    try {
-      const response = await fetch('/api/almacenes');
-      const data = await response.json();
-      setAlmacenes(data);
-    } catch (error) {
-      console.error('Error al cargar almacenes:', error);
-    }
+    try { const r = await fetch('/api/almacenes'); setAlmacenes(await r.json()); } catch {}
   };
 
   const fetchMovimientos = async (almacenId: number) => {
-    try {
-      const response = await fetch(`/api/movimientos?almacenDestinoId=${almacenId}`);
-      const data = await response.json();
-      setMovimientos(data);
-    } catch (error) {
-      console.error('Error al cargar movimientos:', error);
-      setMessage({ type: 'error', text: 'Error al cargar movimientos pendientes' });
-    } finally {
-      setLoading(false);
-    }
+    try { const r = await fetch(`/api/movimientos?almacenDestinoId=${almacenId}`); setMovimientos(await r.json()); }
+    catch { setMessage({ type: 'error', text: 'Error al cargar movimientos' }); }
+    finally { setLoading(false); }
   };
 
   const handleAprobar = async (movimientoId: number) => {
-    if (!session?.user?.id) {
-      setMessage({ type: 'error', text: 'No estás autenticado' });
-      return;
-    }
-
-    setProcessing(movimientoId);
-    setMessage(null);
-
+    if (!session?.user?.id) return;
+    setProcessing(movimientoId); setMessage(null);
     try {
       const response = await fetch(`/api/movimientos/${movimientoId}/aprobar`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        method: 'POST', headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ usuarioAprobadorId: parseInt(session.user.id) }),
       });
-
       const data = await response.json();
-
-      if (!response.ok) {
-        throw new Error(data.error || 'Error al aprobar movimiento');
-      }
-
+      if (!response.ok) throw new Error(data.error || 'Error al aprobar');
       setMessage({ type: 'success', text: 'Movimiento aprobado exitosamente' });
-
-      // Obtener información completa del movimiento aprobado para el PDF
-      const movimientoAprobado = movimientos.find(m => m.id === movimientoId);
-      if (movimientoAprobado) {
-        const almacenDestino = almacenes.find(a => a.id === userAlmacenId);
-
-        // Generar PDF de recepción
-        if (almacenDestino) {
-          generarPDFRecepcion({
-            id: movimientoAprobado.id,
-            fechaSolicitud: movimientoAprobado.fechaSolicitud,
-            fechaAprobacion: new Date().toISOString(),
-            almacenOrigen: movimientoAprobado.almacenOrigen,
-            almacenDestino: {
-              id: almacenDestino.id,
-              nombre: almacenDestino.nombre,
-            },
-            usuarioSolicitante: movimientoAprobado.usuarioSolicitante,
-            usuarioAprobador: {
-              id: parseInt(session.user.id),
-              nombre: session.user.name || 'Usuario',
-            },
-            observaciones: movimientoAprobado.observaciones,
-            detalles: movimientoAprobado.detalles.map(d => ({
-              codigo: d.producto.codigo,
-              nombre: d.producto.nombre,
-              tipo: d.producto.tipo,
-              cantidad: d.cantidad,
-              unidadMedida: 'unidad',
-            })),
-          });
-        }
+      const movAprobado = movimientos.find(m => m.id === movimientoId);
+      const almacenDestino = almacenes.find(a => a.id === userAlmacenId);
+      if (movAprobado && almacenDestino) {
+        generarPDFRecepcion({
+          id: movAprobado.id, fechaSolicitud: movAprobado.fechaSolicitud,
+          fechaAprobacion: new Date().toISOString(),
+          almacenOrigen: movAprobado.almacenOrigen,
+          almacenDestino: { id: almacenDestino.id, nombre: almacenDestino.nombre },
+          usuarioSolicitante: movAprobado.usuarioSolicitante,
+          usuarioAprobador: { id: parseInt(session.user.id), nombre: session.user.name || 'Usuario' },
+          observaciones: movAprobado.observaciones,
+          detalles: movAprobado.detalles.map(d => ({ codigo: d.producto.codigo, nombre: d.producto.nombre, tipo: d.producto.tipo, cantidad: d.cantidad, unidadMedida: 'unidad' })),
+        });
       }
-
-      // Recargar movimientos
-      if (userAlmacenId) {
-        fetchMovimientos(userAlmacenId);
-      }
+      if (userAlmacenId) fetchMovimientos(userAlmacenId);
     } catch (error: unknown) {
-      const errorMessage = error instanceof Error ? error.message : 'Error desconocido';
-      setMessage({ type: 'error', text: errorMessage });
-    } finally {
-      setProcessing(null);
-    }
+      setMessage({ type: 'error', text: error instanceof Error ? error.message : 'Error desconocido' });
+    } finally { setProcessing(null); }
   };
 
-  const handleRechazar = async (movimientoId: number) => {
-    console.log('[handleRechazar] Function called with movimientoId:', movimientoId);
-    console.log('[handleRechazar] Session:', session);
-    console.log('[handleRechazar] User ID:', session?.user?.id);
+  const handleRechazar = (movimientoId: number) => {
+    if (!session?.user?.id) { setMessage({ type: 'error', text: 'No estás autenticado' }); return; }
+    setMotivoRechazo(''); setModalRechazo({ open: true, movimientoId });
+  };
 
-    if (!session?.user?.id) {
-      setMessage({ type: 'error', text: 'No estás autenticado' });
-      return;
-    }
-
-    const observaciones = prompt('Ingresa el motivo del rechazo (opcional):');
-    console.log('[handleRechazar] Observaciones entered:', observaciones);
-
-    // Si el usuario cancela el prompt, no hacer nada
-    if (observaciones === null) {
-      return;
-    }
-
-    setProcessing(movimientoId);
-    setMessage(null);
-
+  const confirmarRechazo = async () => {
+    const movimientoId = modalRechazo.movimientoId;
+    if (!movimientoId || !session?.user?.id) return;
+    setModalRechazo({ open: false, movimientoId: null }); setProcessing(movimientoId); setMessage(null);
     try {
       const response = await fetch(`/api/movimientos/${movimientoId}/rechazar`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          usuarioAprobadorId: parseInt(session.user.id),
-          observaciones,
-        }),
+        method: 'POST', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ usuarioAprobadorId: parseInt(session.user.id), observaciones: motivoRechazo }),
       });
-
       const data = await response.json();
-
-      if (!response.ok) {
-        throw new Error(data.error || 'Error al rechazar movimiento');
-      }
-
-      setMessage({ type: 'success', text: 'Movimiento rechazado exitosamente' });
-
-      if (userAlmacenId) {
-        fetchMovimientos(userAlmacenId);
-      }
+      if (!response.ok) throw new Error(data.error || 'Error al rechazar');
+      setMessage({ type: 'success', text: 'Movimiento rechazado' });
+      if (userAlmacenId) fetchMovimientos(userAlmacenId);
     } catch (error: unknown) {
-      const errorMessage = error instanceof Error ? error.message : 'Error desconocido';
-      setMessage({ type: 'error', text: errorMessage });
-    } finally {
-      setProcessing(null);
-    }
+      setMessage({ type: 'error', text: error instanceof Error ? error.message : 'Error desconocido' });
+    } finally { setProcessing(null); setMotivoRechazo(''); }
   };
 
-  const getTipoIcon = (tipo: string) => {
-    const icons: Record<string, string> = {
-      canastillo_negro: '⬛',
-      canastillo_color: '🎨',
-      cooler: '❄️',
-      caja: '📦',
-    };
-    return icons[tipo] || '📦';
-  };
-
-  const getTotalUnidades = (movimiento: Movimiento) => {
-    return movimiento.detalles.reduce((sum, det) => sum + det.cantidad, 0);
-  };
-
-  if (loading) {
-    return (
-      <div className="min-h-screen bg-[#F3F4F6]">
-        <Navigation />
-        {/* Spacer for fixed navigation */}
-        <div className="h-20"></div>
-        <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 pt-8 pb-8">
-          <div className="card bg-white rounded-lg shadow-sm p-6">
-            <div className="flex items-center justify-center py-12">
-              <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-[#2563EB]"></div>
-              <p className="ml-4 text-sm sm:text-base text-[#64748B]">Cargando movimientos pendientes...</p>
-            </div>
-          </div>
-        </div>
-      </div>
-    );
-  }
+  const totalUnidades = (mov: Movimiento) => mov.detalles.reduce((s, d) => s + d.cantidad, 0);
 
   return (
-    <div className="min-h-screen" style={{ backgroundColor: '#e8e8e8' }}>
+    <div className="min-h-screen" style={{ background: 'var(--bg)' }}>
       <Navigation />
-      {/* Spacer for fixed navigation */}
-      <div className="h-20"></div>
-      <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 pt-8 pb-8">
-        {/* Header Section */}
-        <div className="mb-6">
-          <h1 className="text-2xl sm:text-3xl font-['Playfair_Display'] font-bold text-[#1F2937] mb-2">
-            Recepciones Pendientes
-          </h1>
-          <p className="text-sm sm:text-base text-[#64748B]">
-            Aprueba o rechaza las llegadas de productos a tu almacén
-          </p>
+      <div className="main-content">
+        <div className="max-w-5xl mx-auto px-4 sm:px-6 lg:px-8 pt-6 lg:pt-8 space-y-6">
+
+          {/* Header */}
+          <div>
+            <h1 className="text-2xl font-bold lg:text-3xl text-gray-900">Recepciones Pendientes</h1>
+            <p className="text-sm mt-1" style={{ color: 'var(--text-3)' }}>Aprueba o rechaza los envíos entrantes</p>
+          </div>
+
+          {/* Message */}
+          {message && (
+            <div className={`p-3 rounded-xl flex items-center gap-2 text-sm font-medium ${message.type === 'success' ? 'bg-emerald-50 text-emerald-800 border border-emerald-200' : 'bg-red-50 text-red-800 border border-red-200'}`}>
+              {message.type === 'success'
+                ? <svg className="w-4 h-4 flex-shrink-0" fill="currentColor" viewBox="0 0 20 20"><path fillRule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zm3.707-9.293a1 1 0 00-1.414-1.414L9 10.586 7.707 9.293a1 1 0 00-1.414 1.414l2 2a1 1 0 001.414 0l4-4z" clipRule="evenodd" /></svg>
+                : <svg className="w-4 h-4 flex-shrink-0" fill="currentColor" viewBox="0 0 20 20"><path fillRule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zM8.707 7.293a1 1 0 00-1.414 1.414L8.586 10l-1.293 1.293a1 1 0 101.414 1.414L10 11.414l1.293 1.293a1 1 0 001.414-1.414L11.414 10l1.293-1.293a1 1 0 00-1.414-1.414L10 8.586 8.707 7.293z" clipRule="evenodd" /></svg>
+              }
+              {message.text}
+            </div>
+          )}
+
+          {/* Content */}
+          {loading ? (
+            <div className="card-elevated py-12 flex items-center justify-center gap-3">
+              <div className="animate-spin rounded-full h-8 w-8 border-b-2" style={{ borderColor: 'var(--primary)' }} />
+              <span style={{ color: 'var(--text-3)' }}>Cargando...</span>
+            </div>
+          ) : !userAlmacenId ? (
+            <div className="card-elevated py-12 text-center">
+              <svg className="mx-auto h-12 w-12 mb-3" style={{ color: 'var(--text-4)' }} fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z" />
+              </svg>
+              <p className="font-medium text-gray-700">Sin almacén asignado</p>
+              <p className="text-sm mt-1" style={{ color: 'var(--text-4)' }}>Contacta a un administrador</p>
+            </div>
+          ) : movimientos.length === 0 ? (
+            <div className="card-elevated py-12 text-center">
+              <svg className="mx-auto h-12 w-12 mb-3" style={{ color: 'var(--text-4)' }} fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z" />
+              </svg>
+              <p className="font-medium text-gray-700">No hay recepciones pendientes</p>
+              <p className="text-sm mt-1" style={{ color: 'var(--text-4)' }}>Todas las recepciones fueron procesadas</p>
+            </div>
+          ) : (
+            <div className="space-y-3">
+              {movimientos.map(mov => (
+                <div key={mov.id} className="card-elevated p-4">
+                  <div className="flex flex-col sm:flex-row sm:items-center gap-4">
+                    {/* Icon + Info */}
+                    <div className="flex items-center gap-3 flex-1 min-w-0">
+                      <div className="flex h-10 w-10 items-center justify-center rounded-xl flex-shrink-0" style={{ background: '#eff6ff' }}>
+                        <svg className="h-5 w-5" style={{ color: 'var(--primary)' }} fill="none" stroke="currentColor" strokeWidth={2} viewBox="0 0 24 24">
+                          <path strokeLinecap="round" strokeLinejoin="round" d="M20 13V6a2 2 0 00-2-2H6a2 2 0 00-2 2v7m16 0v5a2 2 0 01-2 2H6a2 2 0 01-2-2v-5" />
+                        </svg>
+                      </div>
+                      <div className="min-w-0">
+                        <div className="flex items-center gap-2 flex-wrap">
+                          <p className="font-semibold text-sm text-gray-800">
+                            {mov.detalles.map(d => `${TIPO_EMOJI[d.producto.tipo] || '📦'} ${d.producto.nombre} × ${d.cantidad}`).join(', ')}
+                          </p>
+                        </div>
+                        <p className="text-xs mt-0.5" style={{ color: 'var(--text-3)' }}>
+                          De: <span className="font-medium">{mov.almacenOrigen.nombre}</span>
+                        </p>
+                        <p className="text-xs" style={{ color: 'var(--text-4)' }}>
+                          {mov.usuarioSolicitante.nombre} · {new Date(mov.fechaSolicitud).toLocaleDateString('es-ES', { day: '2-digit', month: '2-digit', year: 'numeric' })}
+                          {' '}· <span className="font-semibold">{totalUnidades(mov)} uds</span>
+                        </p>
+                        {mov.observaciones && (
+                          <p className="text-xs mt-1 text-blue-700 bg-blue-50 px-2 py-0.5 rounded inline-block">{mov.observaciones}</p>
+                        )}
+                      </div>
+                    </div>
+
+                    {/* Action buttons */}
+                    <div className="flex gap-2 flex-shrink-0">
+                      <button
+                        onClick={() => handleAprobar(mov.id)}
+                        disabled={processing === mov.id}
+                        className="flex items-center gap-1.5 px-3 py-2 rounded-xl text-sm font-semibold transition-colors disabled:opacity-50"
+                        style={{ background: '#ecfdf5', color: '#065f46' }}
+                      >
+                        {processing === mov.id
+                          ? <div className="animate-spin rounded-full h-4 w-4 border-b-2 border-current" />
+                          : <svg className="h-4 w-4" fill="none" stroke="currentColor" strokeWidth={2.5} viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" d="M5 13l4 4L19 7" /></svg>
+                        }
+                        Aprobar
+                      </button>
+                      <button
+                        onClick={() => handleRechazar(mov.id)}
+                        disabled={processing === mov.id}
+                        className="flex items-center gap-1.5 px-3 py-2 rounded-xl text-sm font-semibold transition-colors disabled:opacity-50"
+                        style={{ background: '#fff1f2', color: '#9f1239', border: '1px solid rgba(244,63,94,0.2)' }}
+                      >
+                        <svg className="h-4 w-4" fill="none" stroke="currentColor" strokeWidth={2.5} viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" d="M6 18L18 6M6 6l12 12" /></svg>
+                        Rechazar
+                      </button>
+                    </div>
+                  </div>
+                </div>
+              ))}
+            </div>
+          )}
         </div>
-
-        {message && (
-          <div
-            className={`mb-6 p-4 rounded-lg flex items-center gap-3 ${message.type === 'success'
-              ? 'bg-green-50 text-green-800 border border-green-200'
-              : 'bg-red-50 text-red-800 border border-red-200'
-              }`}
-          >
-            {message.type === 'success' ? (
-              <svg className="w-5 h-5 flex-shrink-0" fill="currentColor" viewBox="0 0 20 20">
-                <path fillRule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zm3.707-9.293a1 1 0 00-1.414-1.414L9 10.586 7.707 9.293a1 1 0 00-1.414 1.414l2 2a1 1 0 001.414 0l4-4z" clipRule="evenodd" />
-              </svg>
-            ) : (
-              <svg className="w-5 h-5 flex-shrink-0" fill="currentColor" viewBox="0 0 20 20">
-                <path fillRule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zM8.707 7.293a1 1 0 00-1.414 1.414L8.586 10l-1.293 1.293a1 1 0 101.414 1.414L10 11.414l1.293 1.293a1 1 0 001.414-1.414L11.414 10l1.293-1.293a1 1 0 00-1.414-1.414L10 8.586 8.707 7.293z" clipRule="evenodd" />
-              </svg>
-            )}
-            <span className="font-medium">{message.text}</span>
-          </div>
-        )}
-
-        {!userAlmacenId ? (
-          <div className="card bg-white">
-            <div className="text-center py-12">
-              <svg className="mx-auto h-16 w-16 text-[#CBD5E1] mb-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z" />
-              </svg>
-              <p className="text-[#64748B] text-lg font-medium">Tu usuario no tiene un almacén asignado</p>
-              <p className="text-[#94A3B8] text-sm mt-2">Contacta a un administrador</p>
-            </div>
-          </div>
-        ) : movimientos.length === 0 ? (
-          <div className="card bg-white">
-            <div className="text-center py-12">
-              <svg className="mx-auto h-16 w-16 text-[#CBD5E1] mb-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z" />
-              </svg>
-              <p className="text-[#64748B] text-lg font-medium">No hay recepciones pendientes</p>
-            </div>
-          </div>
-        ) : (
-          <div className="space-y-4">
-            {movimientos.map((mov) => (
-              <div key={mov.id} className="bg-white rounded-lg shadow-sm border border-slate-200 p-4 sm:p-5">
-                {/* Header */}
-                <div className="mb-4 pb-3 border-b border-slate-200">
-                  <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
-                    <div className="flex items-center gap-2 flex-wrap">
-                      <span className="inline-flex items-center px-2.5 py-1 rounded-full text-xs font-bold bg-yellow-100 text-yellow-800">
-                        PENDIENTE
-                      </span>
-                      <span className="text-sm sm:text-base font-bold text-[#1F2937]">
-                        Movimiento #{mov.id}
-                      </span>
-                    </div>
-                    <div className="text-xs text-[#64748B]">
-                      {new Date(mov.fechaSolicitud).toLocaleDateString('es-ES', {
-                        day: '2-digit',
-                        month: '2-digit',
-                        year: 'numeric',
-                        hour: '2-digit',
-                        minute: '2-digit'
-                      })}
-                    </div>
-                  </div>
-                </div>
-
-                {/* Info Grid */}
-                <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 gap-3 sm:gap-4 mb-4">
-                  <div>
-                    <p className="text-xs text-[#64748B] mb-1">Almacén Origen</p>
-                    <p className="font-semibold text-sm sm:text-base text-[#1F2937]">{mov.almacenOrigen.nombre}</p>
-                  </div>
-                  <div>
-                    <p className="text-xs text-[#64748B] mb-1">Solicitante</p>
-                    <p className="font-semibold text-sm sm:text-base text-[#1F2937]">{mov.usuarioSolicitante.nombre}</p>
-                  </div>
-                  <div>
-                    <p className="text-xs text-[#64748B] mb-1">Total Unidades</p>
-                    <p className="text-lg sm:text-xl font-['Playfair_Display'] font-bold text-green-600">{getTotalUnidades(mov)}</p>
-                  </div>
-                </div>
-
-                {mov.observaciones && (
-                  <div className="bg-blue-50 border-l-4 border-blue-500 rounded p-3 mb-4">
-                    <p className="text-xs font-bold text-blue-900 uppercase mb-1">Observaciones</p>
-                    <p className="text-sm text-blue-800">{mov.observaciones}</p>
-                  </div>
-                )}
-
-                {/* Products Table */}
-                <div className="mb-4">
-                  <p className="text-xs font-semibold text-[#64748B] uppercase mb-2">Productos a Recibir</p>
-                  <div className="border border-slate-200 rounded-lg overflow-hidden">
-                    <div className="overflow-x-auto">
-                      <table className="w-full min-w-full">
-                        <thead className="bg-slate-100">
-                          <tr>
-                            <th className="text-left py-2.5 px-3 text-xs font-semibold text-[#64748B] uppercase">Producto</th>
-                            <th className="text-center py-2.5 px-3 text-xs font-semibold text-[#64748B] uppercase w-20 sm:w-24">Cantidad</th>
-                          </tr>
-                        </thead>
-                        <tbody>
-                          {mov.detalles.map((detalle, index) => (
-                            <tr
-                              key={detalle.id}
-                              className={`border-t border-slate-200 ${index % 2 === 0 ? 'bg-white' : 'bg-slate-50'}`}
-                            >
-                              <td className="py-2.5 px-3">
-                                <div className="flex items-center gap-2">
-                                  <span className="text-base sm:text-lg flex-shrink-0">{getTipoIcon(detalle.producto.tipo)}</span>
-                                  <div className="min-w-0">
-                                    <p className="font-medium text-xs sm:text-sm text-[#1F2937] truncate">{detalle.producto.nombre}</p>
-                                    <p className="text-xs text-[#64748B]">{detalle.producto.codigo}</p>
-                                  </div>
-                                </div>
-                              </td>
-                              <td className="py-2.5 px-3 text-center">
-                                <span className="inline-flex items-center justify-center px-2 py-1 bg-blue-100 text-blue-800 rounded-full font-bold text-xs sm:text-sm">
-                                  {detalle.cantidad}
-                                </span>
-                              </td>
-                            </tr>
-                          ))}
-                        </tbody>
-                      </table>
-                    </div>
-                  </div>
-                </div>
-
-                {/* Action Buttons */}
-                <div className="flex flex-col sm:flex-row gap-2 sm:gap-3">
-                  <button
-                    onClick={() => handleAprobar(mov.id)}
-                    disabled={processing === mov.id}
-                    className="flex-1 flex items-center justify-center gap-2 bg-green-600 hover:bg-green-700 text-white px-4 sm:px-6 py-2.5 sm:py-3 rounded-lg font-bold text-sm sm:text-base transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
-                  >
-                    {processing === mov.id ? (
-                      <>
-                        <div className="animate-spin rounded-full h-4 w-4 sm:h-5 sm:w-5 border-b-2 border-white"></div>
-                        <span className="text-sm sm:text-base">Procesando...</span>
-                      </>
-                    ) : (
-                      <>
-                        <svg className="w-4 h-4 sm:w-5 sm:h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" />
-                        </svg>
-                        <span className="text-sm sm:text-base">Aprobar</span>
-                      </>
-                    )}
-                  </button>
-                  <button
-                    onClick={() => {
-                      console.log('[Rechazar Button] Clicked! Movement ID:', mov.id);
-                      handleRechazar(mov.id);
-                    }}
-                    disabled={processing === mov.id}
-                    className="flex-1 flex items-center justify-center gap-2 bg-red-600 hover:bg-red-700 text-white px-4 sm:px-6 py-2.5 sm:py-3 rounded-lg font-bold text-sm sm:text-base transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
-                  >
-                    {processing === mov.id ? (
-                      <>
-                        <div className="animate-spin rounded-full h-4 w-4 sm:h-5 sm:w-5 border-b-2 border-white"></div>
-                        <span className="text-sm sm:text-base">Procesando...</span>
-                      </>
-                    ) : (
-                      <>
-                        <svg className="w-4 h-4 sm:w-5 sm:h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
-                        </svg>
-                        <span className="text-sm sm:text-base">Rechazar</span>
-                      </>
-                    )}
-                  </button>
-                </div>
-              </div>
-            ))}
-          </div>
-        )}
       </div>
+
+      {/* Modal Rechazo */}
+      {modalRechazo.open && (
+        <div className="fixed inset-0 z-50 flex items-end sm:items-center justify-center p-0 sm:p-4">
+          <div className="absolute inset-0 bg-black/50" onClick={() => setModalRechazo({ open: false, movimientoId: null })} />
+          <div className="relative bg-white w-full sm:max-w-md sm:rounded-2xl rounded-t-2xl shadow-2xl p-5">
+            <div className="flex items-center gap-3 mb-4">
+              <div className="flex h-9 w-9 items-center justify-center rounded-xl" style={{ background: '#fff1f2' }}>
+                <svg className="w-5 h-5" style={{ color: '#e11d48' }} fill="none" stroke="currentColor" strokeWidth={2} viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" d="M6 18L18 6M6 6l12 12" /></svg>
+              </div>
+              <div>
+                <h3 className="text-base font-bold text-gray-900">Rechazar Movimiento</h3>
+                <p className="text-xs" style={{ color: 'var(--text-4)' }}>#{modalRechazo.movimientoId}</p>
+              </div>
+            </div>
+            <label className="block text-sm font-semibold text-gray-800 mb-1.5">
+              Motivo <span className="font-normal" style={{ color: 'var(--text-4)' }}>(opcional)</span>
+            </label>
+            <textarea
+              value={motivoRechazo}
+              onChange={e => setMotivoRechazo(e.target.value)}
+              rows={3}
+              placeholder="Ej: Stock incorrecto, producto equivocado..."
+              className="input-field resize-none mb-4"
+              autoFocus
+            />
+            <div className="flex gap-3">
+              <button onClick={() => setModalRechazo({ open: false, movimientoId: null })} className="flex-1 px-4 py-2.5 rounded-xl font-semibold text-sm bg-gray-100 hover:bg-gray-200 text-gray-800 transition-colors">Cancelar</button>
+              <button onClick={confirmarRechazo} className="flex-1 px-4 py-2.5 rounded-xl font-semibold text-sm text-white transition-colors" style={{ background: '#e11d48' }}>Confirmar Rechazo</button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }

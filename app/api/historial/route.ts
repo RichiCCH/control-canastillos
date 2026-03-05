@@ -1,7 +1,9 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { db } from '@/db';
 import { movimientos, almacenes, users, movimientosDetalle, productos } from '@/db/schema';
-import { eq, or, desc } from 'drizzle-orm';
+import { eq, or, desc, inArray } from 'drizzle-orm';
+
+export const dynamic = 'force-dynamic';
 
 export async function GET(request: NextRequest) {
   try {
@@ -9,16 +11,12 @@ export async function GET(request: NextRequest) {
     const almacenId = searchParams.get('almacenId');
 
     if (!almacenId) {
-      return NextResponse.json(
-        { error: 'almacenId es requerido' },
-        { status: 400 }
-      );
+      return NextResponse.json({ error: 'almacenId es requerido' }, { status: 400 });
     }
 
     const almacenIdNum = parseInt(almacenId);
 
-    // Fetch all movements where this warehouse is either origin or destination
-    // Incluye movimientos tipo 'salida', 'entrada' (ajustes), y 'baja' (ajustes)
+    // ─── 1. Un solo query para todos los movimientos ───────────────────────────
     const movimientosData = await db
       .select({
         id: movimientos.id,
@@ -33,137 +31,108 @@ export async function GET(request: NextRequest) {
         motivo: movimientos.motivo,
         proveedorResponsable: movimientos.proveedorResponsable,
         observaciones: movimientos.observaciones,
+        transportadoPor: movimientos.transportadoPor,
       })
       .from(movimientos)
-      .where(
-        or(
-          eq(movimientos.almacenOrigenId, almacenIdNum),
-          eq(movimientos.almacenDestinoId, almacenIdNum)
-        )
-      )
-      .orderBy(desc(movimientos.fechaSolicitud)); // Ordenar de más nuevo a más antiguo
+      .where(or(
+        eq(movimientos.almacenOrigenId, almacenIdNum),
+        eq(movimientos.almacenDestinoId, almacenIdNum),
+      ))
+      .orderBy(desc(movimientos.fechaSolicitud));
 
-    // Fetch related data for each movement
-    const result = await Promise.all(
-      movimientosData.map(async (mov) => {
-        // Determinar el tipo de movimiento
-        let tipo: string;
+    if (movimientosData.length === 0) {
+      return NextResponse.json([]);
+    }
 
-        if (mov.tipoMovimiento === 'entrada') {
-          tipo = 'ajuste_entrada'; // Ajuste de entrada (compra, devolución)
-        } else if (mov.tipoMovimiento === 'baja') {
-          tipo = 'ajuste_baja'; // Ajuste de baja (daño, pérdida)
-        } else {
-          // Movimiento normal tipo 'salida'
-          tipo = mov.almacenDestinoId === almacenIdNum ? 'entrada' : 'salida';
-        }
+    // ─── 2. Recopilar IDs únicos para queries en batch ─────────────────────────
+    const movIds = movimientosData.map(m => m.id);
+    const almacenIds = [...new Set([
+      ...movimientosData.map(m => m.almacenOrigenId).filter(Boolean),
+      ...movimientosData.map(m => m.almacenDestinoId).filter(Boolean),
+    ])] as number[];
+    const userIds = [...new Set([
+      ...movimientosData.map(m => m.usuarioSolicitanteId).filter(Boolean),
+      ...movimientosData.map(m => m.usuarioAprobadorId).filter(Boolean),
+    ])] as number[];
 
-        // Fetch almacen origen (si existe)
-        let almacenOrigen = null;
-        if (mov.almacenOrigenId) {
-          const almacenOrigenData = await db
-            .select({
-              id: almacenes.id,
-              nombre: almacenes.nombre,
-            })
-            .from(almacenes)
-            .where(eq(almacenes.id, mov.almacenOrigenId))
-            .limit(1);
-          almacenOrigen = almacenOrigenData[0] || null;
-        }
-
-        // Fetch almacen destino (si existe)
-        let almacenDestino = null;
-        if (mov.almacenDestinoId) {
-          const almacenDestinoData = await db
-            .select({
-              id: almacenes.id,
-              nombre: almacenes.nombre,
-            })
-            .from(almacenes)
-            .where(eq(almacenes.id, mov.almacenDestinoId))
-            .limit(1);
-          almacenDestino = almacenDestinoData[0] || null;
-        }
-
-        // Fetch usuario solicitante
-        let usuarioSolicitante = null;
-        if (mov.usuarioSolicitanteId) {
-          const solicitante = await db
-            .select({
-              id: users.id,
-              nombre: users.nombre,
-            })
-            .from(users)
-            .where(eq(users.id, mov.usuarioSolicitanteId))
-            .limit(1);
-          usuarioSolicitante = solicitante[0] || null;
-        }
-
-        // Fetch usuario aprobador if exists
-        let usuarioAprobador = null;
-        if (mov.usuarioAprobadorId) {
-          const aprobador = await db
-            .select({
-              id: users.id,
-              nombre: users.nombre,
-            })
-            .from(users)
-            .where(eq(users.id, mov.usuarioAprobadorId))
-            .limit(1);
-          usuarioAprobador = aprobador[0] || null;
-        }
-
-        // Fetch movement details with products
-        const detalles = await db
-          .select({
-            id: movimientosDetalle.id,
-            cantidad: movimientosDetalle.cantidad,
-            productoId: movimientosDetalle.productoId,
-            productoCodigo: productos.codigo,
-            productoNombre: productos.nombre,
-            productoTipo: productos.tipo,
-            productoUnidadMedida: productos.unidadMedida,
-          })
-          .from(movimientosDetalle)
-          .innerJoin(productos, eq(movimientosDetalle.productoId, productos.id))
-          .where(eq(movimientosDetalle.movimientoId, mov.id));
-
-        return {
-          id: mov.id,
-          tipoMovimiento: mov.tipoMovimiento,
-          estado: mov.estado,
-          motivo: mov.motivo,
-          proveedorResponsable: mov.proveedorResponsable,
-          observaciones: mov.observaciones,
-          fechaSolicitud: mov.fechaSolicitud,
-          fechaAprobacion: mov.fechaAprobacion,
-          tipo,
-          almacenOrigen,
-          almacenDestino,
-          usuarioSolicitante,
-          usuarioAprobador,
-          detalles: detalles.map((d) => ({
-            id: d.id,
-            cantidad: d.cantidad,
-            producto: {
-              id: d.productoId,
-              codigo: d.productoCodigo,
-              nombre: d.productoNombre,
-              tipo: d.productoTipo,
-              unidadMedida: d.productoUnidadMedida,
-            },
-          })),
-        };
+    // ─── 3. Queries en paralelo (3 queries total en vez de N*3) ───────────────
+    const [almacenesData, usersData, detallesData] = await Promise.all([
+      almacenIds.length > 0
+        ? db.select({ id: almacenes.id, nombre: almacenes.nombre })
+          .from(almacenes)
+          .where(inArray(almacenes.id, almacenIds))
+        : Promise.resolve([]),
+      userIds.length > 0
+        ? db.select({ id: users.id, nombre: users.nombre })
+          .from(users)
+          .where(inArray(users.id, userIds))
+        : Promise.resolve([]),
+      db.select({
+        movimientoId: movimientosDetalle.movimientoId,
+        id: movimientosDetalle.id,
+        cantidad: movimientosDetalle.cantidad,
+        productoId: movimientosDetalle.productoId,
+        productoCodigo: productos.codigo,
+        productoNombre: productos.nombre,
+        productoTipo: productos.tipo,
+        productoUnidadMedida: productos.unidadMedida,
       })
-    );
+        .from(movimientosDetalle)
+        .innerJoin(productos, eq(movimientosDetalle.productoId, productos.id))
+        .where(inArray(movimientosDetalle.movimientoId, movIds)),
+    ]);
+
+    // ─── 4. Construir mapas de lookup O(1) ────────────────────────────────────
+    const almMap = new Map(almacenesData.map(a => [a.id, a]));
+    const userMap = new Map(usersData.map(u => [u.id, u]));
+    const detallesMap = new Map<number, typeof detallesData>();
+    for (const d of detallesData) {
+      const arr = detallesMap.get(d.movimientoId) ?? [];
+      arr.push(d);
+      detallesMap.set(d.movimientoId, arr);
+    }
+
+    // ─── 5. Ensamblar resultado final ─────────────────────────────────────────
+    const result = movimientosData.map(mov => {
+      let tipo: string;
+      if (mov.tipoMovimiento === 'entrada') tipo = 'ajuste_entrada';
+      else if (mov.tipoMovimiento === 'baja') tipo = 'ajuste_baja';
+      else tipo = mov.almacenDestinoId === almacenIdNum ? 'entrada' : 'salida';
+
+      const detalles = (detallesMap.get(mov.id) ?? []).map(d => ({
+        id: d.id,
+        cantidad: d.cantidad,
+        producto: {
+          id: d.productoId,
+          codigo: d.productoCodigo,
+          nombre: d.productoNombre,
+          tipo: d.productoTipo,
+          unidadMedida: d.productoUnidadMedida,
+        },
+      }));
+
+      return {
+        id: mov.id,
+        tipoMovimiento: mov.tipoMovimiento,
+        estado: mov.estado,
+        motivo: mov.motivo,
+        proveedorResponsable: mov.proveedorResponsable,
+        observaciones: mov.observaciones,
+        transportadoPor: mov.transportadoPor,
+        fechaSolicitud: mov.fechaSolicitud,
+        fechaAprobacion: mov.fechaAprobacion,
+        tipo,
+        almacenOrigen: mov.almacenOrigenId ? (almMap.get(mov.almacenOrigenId) ?? null) : null,
+        almacenDestino: mov.almacenDestinoId ? (almMap.get(mov.almacenDestinoId) ?? null) : null,
+        usuarioSolicitante: mov.usuarioSolicitanteId ? (userMap.get(mov.usuarioSolicitanteId) ?? null) : null,
+        usuarioAprobador: mov.usuarioAprobadorId ? (userMap.get(mov.usuarioAprobadorId) ?? null) : null,
+        detalles,
+      };
+    });
 
     return NextResponse.json(result);
   } catch (error) {
     console.error('Error al obtener historial:', error);
-    return NextResponse.json(
-      { error: 'Error al obtener historial' },
-      { status: 500 }
-    );
+    return NextResponse.json({ error: 'Error al obtener historial' }, { status: 500 });
   }
 }

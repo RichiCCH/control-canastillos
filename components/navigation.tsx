@@ -4,195 +4,221 @@ import Link from 'next/link';
 import { usePathname } from 'next/navigation';
 import { useState } from 'react';
 import { useSession, signOut } from 'next-auth/react';
+import {
+  LayoutDashboard, ArrowUpFromLine, Inbox, Boxes, History,
+  Package, LogOut, Users, Warehouse, Settings, X, Menu, ClipboardList,
+} from 'lucide-react';
+import { cn } from '@/lib/utils/cn';
 import NotificationsBell from './notifications-bell';
+
+const NAV = [
+  { href: '/', label: 'Dashboard', icon: LayoutDashboard },
+  { href: '/salida', label: 'Registrar Salida', icon: ArrowUpFromLine },
+  { href: '/recepciones', label: 'Recepciones', icon: Inbox },
+  { href: '/inventario', label: 'Inventario', icon: Boxes },
+  { href: '/mis-movimientos', label: 'Mis Movimientos', icon: History },
+  { href: '/historial', label: 'Historial', icon: ClipboardList },
+];
+
+const ADMIN_NAV = [
+  { href: '/admin/usuarios', label: 'Usuarios', icon: Users },
+  { href: '/admin/almacenes', label: 'Almacenes', icon: Warehouse },
+  { href: '/admin/productos', label: 'Productos', icon: Package },
+  { href: '/admin/ajustes', label: 'Ajustes', icon: Settings },
+];
+
+const BOTTOM_5 = [
+  { href: '/', label: 'Inicio', icon: LayoutDashboard },
+  { href: '/inventario', label: 'Stock', icon: Boxes },
+  { href: '/salida', label: 'Salida', icon: ArrowUpFromLine },
+  { href: '/recepciones', label: 'Recibir', icon: Inbox },
+  { href: '/historial', label: 'Historial', icon: ClipboardList },
+];
 
 export default function Navigation() {
   const pathname = usePathname();
-  const [isOpen, setIsOpen] = useState(false);
+  const [menuOpen, setMenuOpen] = useState(false);
   const { data: session } = useSession();
 
-  const userRole = (session?.user as any)?.rol || 'operador';
+  const role = (session?.user as any)?.rol || 'operador';
   const userName = session?.user?.name || 'Usuario';
-  const userAlmacen = (session?.user as any)?.almacenId;
-  const almacenNombre = (session?.user as any)?.almacenNombre;
+  const almacenNombre = (session?.user as any)?.almacenNombre || '';
+  const initials = userName.split(' ').map((w: string) => w[0]).join('').slice(0, 2).toUpperCase();
 
-  const links = [
-    { href: '/', label: 'Dashboard', icon: '📊' },
-    { href: '/inventario', label: 'Inventario', icon: '📦' },
-    { href: '/salida', label: 'Registrar Salida', icon: '📤' },
-    { href: '/recepciones', label: 'Recepciones', icon: '📥' },
-    { href: '/mis-movimientos', label: 'Mis Movimientos', icon: '📋' },
-    { href: '/historial', label: 'Historial', icon: '📜' },
-  ];
+  const isActive = (href: string) => href === '/' ? pathname === '/' : pathname.startsWith(href);
 
-  const adminLinks = [
-    { href: '/admin/usuarios', label: 'Administrar Usuarios', icon: '👥' },
-    { href: '/admin/almacenes', label: 'Administrar Almacenes', icon: '🏢' },
-    { href: '/admin/productos', label: 'Administrar Productos', icon: '📦' },
-    { href: '/admin/ajustes', label: 'Ajustes de Inventario', icon: '⚖️' },
-  ];
+  const SidebarContent = ({ onClose }: { onClose?: () => void }) => (
+    <nav className="flex flex-col gap-0.5 p-3 flex-1 overflow-y-auto">
+      {NAV.map(({ href, label, icon: Icon }) => {
+        const active = isActive(href);
+        return (
+          <Link key={href} href={href} onClick={onClose} className={cn('nav-item', active && 'active')}>
+            <Icon className={cn('h-[18px] w-[18px] flex-shrink-0', active && 'stroke-[2.5]')} />
+            <span>{label}</span>
+          </Link>
+        );
+      })}
 
-  const handleSignOut = async () => {
-    await signOut({ callbackUrl: '/login' });
-  };
+      {role === 'admin' && (
+        <>
+          <div className="pt-3 pb-1.5 px-2">
+            <p className="text-[10px] font-semibold uppercase tracking-widest text-muted-foreground">Admin</p>
+          </div>
+          {ADMIN_NAV.map(({ href, label, icon: Icon }) => {
+            const active = isActive(href);
+            return (
+              <Link key={href} href={href} onClick={onClose} className={cn('nav-item', active && 'active')}>
+                <Icon className={cn('h-[18px] w-[18px] flex-shrink-0', active && 'stroke-[2.5]')} />
+                <span>{label}</span>
+              </Link>
+            );
+          })}
+        </>
+      )}
+    </nav>
+  );
 
   return (
-    <nav className="bg-gray-100 shadow-sm border-b border-gray-300 fixed w-full top-0 z-50">
-      <div className="max-w-full mx-auto px-3 sm:px-4 lg:px-6">
-        <div className="flex justify-between items-center h-20 gap-2">
-          {/* Logo y nombre */}
-          <div className="flex items-center gap-2 flex-shrink-0">
-            <div className="flex-shrink-0">
-              <img
-                src="/logo.png"
-                alt="Logo"
-                className="w-10 h-10 object-contain"
-              />
+    <>
+      {/* ═══ SIDEBAR (desktop) ═══ */}
+      <aside className="sidebar">
+        <SidebarContent />
+
+        {/* ── User footer ── */}
+        <div className="px-3 py-3 border-t" style={{ borderColor: 'hsl(var(--border) / 0.5)' }}>
+          <div className="flex items-center gap-2.5 px-2 py-2 rounded-xl hover:bg-muted/40 transition-colors">
+            <div className="h-8 w-8 rounded-lg bg-gradient-to-br from-blue-500 to-blue-600 flex items-center justify-center text-xs font-bold text-white flex-shrink-0">
+              {initials}
             </div>
-            <div>
-              <h1
-                className="text-gray-900 font-['Montserrat'] text-base sm:text-lg font-semibold tracking-tight leading-tight whitespace-nowrap"
-                style={{ color: '#1F2937' }}
-              >
-                Control de Inventario
-              </h1>
-              <p className="text-gray-600 text-[10px] sm:text-xs leading-tight whitespace-nowrap hidden sm:block">Sistema de Gestión</p>
+            <div className="flex-1 min-w-0">
+              <p className="text-xs font-semibold text-foreground truncate">{userName}</p>
+              <p className="text-[10px] text-muted-foreground capitalize">
+                {role}{almacenNombre ? ` · ${almacenNombre}` : ''}
+              </p>
+            </div>
+            <button
+              onClick={() => signOut({ callbackUrl: '/login' })}
+              className="p-1.5 rounded-lg text-muted-foreground hover:text-foreground hover:bg-muted/60 transition-colors flex-shrink-0"
+              title="Cerrar sesión"
+            >
+              <LogOut className="w-4 h-4" />
+            </button>
+          </div>
+        </div>
+      </aside>
+
+      {/* ═══ TOPBAR ═══ */}
+      <header className="topbar justify-between">
+        {/* Left */}
+        <div className="flex items-center gap-3">
+          {/* Hamburger mobile */}
+          <button
+            onClick={() => setMenuOpen(v => !v)}
+            className="p-2 rounded-xl text-muted-foreground hover:bg-muted/60 transition-colors lg:hidden"
+          >
+            <Menu className="w-5 h-5" />
+          </button>
+
+          {/* Logo */}
+          <div className="flex items-center gap-2.5">
+            <div className="flex h-9 w-9 items-center justify-center rounded-xl flex-shrink-0 bg-gradient-to-br from-blue-500 to-blue-600 shadow-sm">
+              <Package className="h-5 w-5 text-white" />
+            </div>
+            <div className="hidden sm:block">
+              <p className="text-sm font-bold leading-none text-foreground">Control de Inventario</p>
+              {almacenNombre && (
+                <p className="text-[11px] text-muted-foreground leading-tight mt-0.5">{almacenNombre}</p>
+              )}
             </div>
           </div>
+        </div>
 
-          {/* Desktop Navigation */}
-          <div className="hidden lg:flex items-center gap-1 flex-shrink-0">
-            {links.map((link) => (
-              <Link
-                key={link.href}
-                href={link.href}
-                className={`px-2 xl:px-3 py-2 rounded-lg transition-all duration-200 flex items-center gap-1 xl:gap-2 whitespace-nowrap ${pathname === link.href
-                  ? 'bg-[#2563EB] text-white shadow-md'
-                  : 'text-gray-700 hover:bg-[#2563EB] hover:text-white'
-                  }`}
-              >
-                <span className="text-base">{link.icon}</span>
-                <span className="font-medium text-xs xl:text-sm">{link.label}</span>
-              </Link>
-            ))}
-            {userRole === 'admin' && adminLinks.map((link) => (
-              <Link
-                key={link.href}
-                href={link.href}
-                className={`px-2 xl:px-3 py-2 rounded-lg transition-all duration-200 flex items-center gap-1 xl:gap-2 whitespace-nowrap ${pathname === link.href
-                  ? 'bg-gray-600 text-white shadow-md'
-                  : 'text-gray-600 hover:bg-gray-600 hover:text-white'
-                  }`}
-              >
-                <span className="text-base">{link.icon}</span>
-                <span className="font-medium text-xs xl:text-sm">{link.label}</span>
-              </Link>
-            ))}
+        {/* Right */}
+        <div className="flex items-center gap-2">
+          <NotificationsBell onOpenRecepciones={() => {
+            setMenuOpen(false);
+            window.dispatchEvent(new CustomEvent('open-recepciones'));
+          }} />
+
+          {/* User chip */}
+          <div className="flex items-center gap-2 rounded-xl bg-muted/50 border border-border/50 px-2.5 py-1.5">
+            <div className="h-7 w-7 rounded-lg bg-gradient-to-br from-blue-500 to-blue-600 flex items-center justify-center text-[10px] font-bold text-white shadow-sm flex-shrink-0">
+              {initials}
+            </div>
+            <div className="hidden sm:block leading-tight">
+              <p className="text-xs font-semibold text-foreground">{userName}</p>
+              <p className="text-[10px] text-muted-foreground capitalize">{role}</p>
+            </div>
+            <button
+              onClick={() => signOut({ callbackUrl: '/login' })}
+              className="hidden sm:flex p-1 rounded-lg text-muted-foreground hover:text-foreground hover:bg-muted/60 transition-colors"
+              title="Cerrar sesión"
+            >
+              <LogOut className="w-3.5 h-3.5" />
+            </button>
           </div>
+        </div>
+      </header>
 
-          {/* User Info & Logout */}
-          <div className="hidden lg:flex items-center gap-3 flex-shrink-0">
-            {/* Campana de notificaciones */}
-            <NotificationsBell />
-
-            {/* User info card */}
-            <div className="flex items-center gap-3 bg-white rounded-lg px-4 py-2 shadow-sm border border-gray-200">
-              <div className="flex flex-col items-start">
-                <span className="font-bold text-gray-800 text-sm leading-tight">
-                  {userName}
-                </span>
-                <span className="text-[10px] text-gray-500 font-medium uppercase tracking-wide">
-                  {userRole} {userAlmacen ? `| ${almacenNombre || 'Almacén ' + userAlmacen}` : ''}
-                </span>
+      {/* Mobile menu overlay */}
+      {menuOpen && (
+        <div className="fixed inset-0 z-[60] flex lg:hidden animate-fade-in" onClick={() => setMenuOpen(false)}>
+          <div className="absolute inset-0 bg-black/40 backdrop-blur-sm" />
+          <div
+            className="relative w-72 h-full bg-card shadow-2xl flex flex-col animate-fade-up"
+            onClick={e => e.stopPropagation()}
+          >
+            {/* Header menú */}
+            <div
+              className="flex items-center gap-3 px-4 py-4"
+              style={{ background: 'linear-gradient(135deg, #2563EB, #1d4ed8)' }}
+            >
+              <div className="h-10 w-10 rounded-xl bg-white/20 flex items-center justify-center text-sm font-bold text-white flex-shrink-0">
+                {initials}
+              </div>
+              <div className="flex-1 min-w-0">
+                <p className="text-sm font-bold text-white truncate">{userName}</p>
+                <p className="text-xs text-blue-200 capitalize">
+                  {role}{almacenNombre ? ` · ${almacenNombre}` : ''}
+                </p>
               </div>
               <button
-                onClick={handleSignOut}
-                className="flex items-center justify-center gap-1.5 bg-red-600 hover:bg-red-700 text-white px-3 py-1.5 rounded-lg text-xs font-medium transition-colors"
-                title="Cerrar sesión"
+                onClick={() => setMenuOpen(false)}
+                className="p-1.5 rounded-lg bg-white/10 hover:bg-white/20 transition-colors"
               >
-                <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M17 16l4-4m0 0l-4-4m4 4H7m6 4v1a3 3 0 01-3 3H6a3 3 0 01-3-3V7a3 3 0 013-3h4a3 3 0 013 3v1" />
-                </svg>
-                <span>Salir</span>
+                <X className="w-4 h-4 text-white" />
+              </button>
+            </div>
+
+            <SidebarContent onClose={() => setMenuOpen(false)} />
+
+            <div className="p-3 border-t" style={{ borderColor: 'hsl(var(--border) / 0.5)' }}>
+              <button
+                onClick={() => signOut({ callbackUrl: '/login' })}
+                className="nav-item w-full text-red-500 hover:bg-red-50"
+              >
+                <LogOut className="w-[18px] h-[18px]" />
+                Cerrar sesión
               </button>
             </div>
           </div>
-
-          {/* Mobile: Notification bell and menu button */}
-          <div className="flex lg:hidden items-center gap-2">
-            <NotificationsBell />
-            <button
-              onClick={() => setIsOpen(!isOpen)}
-              className="text-gray-700 p-2 hover:bg-gray-200 rounded-lg transition-colors"
-            >
-              <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                {isOpen ? (
-                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
-                ) : (
-                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 6h16M4 12h16M4 18h16" />
-                )}
-              </svg>
-            </button>
-          </div>
-        </div>
-      </div>
-
-      {/* Mobile Navigation */}
-      {isOpen && (
-        <div className="lg:hidden bg-gray-100 border-t border-gray-300">
-          <div className="px-3 py-3 space-y-1.5">
-            {/* User info in mobile */}
-            <div className="bg-[#2563EB] text-white px-4 py-3 rounded-lg mb-2">
-              <div className="flex items-center gap-2">
-                <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M16 7a4 4 0 11-8 0 4 4 0 018 0zM12 14a7 7 0 00-7 7h14a7 7 0 00-7-7z" />
-                </svg>
-                <span className="font-semibold">{userName}</span>
-              </div>
-            </div>
-
-            {links.map((link) => (
-              <Link
-                key={link.href}
-                href={link.href}
-                onClick={() => setIsOpen(false)}
-                className={`flex items-center gap-2 px-4 py-2.5 rounded-lg transition-colors ${pathname === link.href
-                  ? 'bg-[#2563EB] text-white shadow-md'
-                  : 'text-gray-700 hover:bg-[#2563EB] hover:text-white'
-                  }`}
-              >
-                <span className="text-base">{link.icon}</span>
-                <span className="font-medium text-sm">{link.label}</span>
-              </Link>
-            ))}
-            {userRole === 'admin' && adminLinks.map((link) => (
-              <Link
-                key={link.href}
-                href={link.href}
-                onClick={() => setIsOpen(false)}
-                className={`flex items-center gap-2 px-4 py-2.5 rounded-lg transition-colors border border-gray-400 ${pathname === link.href
-                  ? 'bg-gray-600 text-white shadow-md'
-                  : 'text-gray-600 hover:bg-gray-600 hover:text-white'
-                  }`}
-              >
-                <span className="text-base">{link.icon}</span>
-                <span className="font-medium text-sm">{link.label}</span>
-              </Link>
-            ))}
-
-            {/* Logout button in mobile */}
-            <button
-              onClick={handleSignOut}
-              className="w-full flex items-center justify-center gap-2 bg-red-600 hover:bg-red-700 text-white px-4 py-2.5 rounded-lg text-sm font-medium transition-colors mt-2 border border-red-500"
-            >
-              <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M17 16l4-4m0 0l-4-4m4 4H7m6 4v1a3 3 0 01-3 3H6a3 3 0 01-3-3V7a3 3 0 013-3h4a3 3 0 013 3v1" />
-              </svg>
-              <span>Cerrar Sesión</span>
-            </button>
-          </div>
         </div>
       )}
-    </nav>
+
+      {/* ═══ BOTTOM NAV (mobile) ═══ */}
+      <nav className="bottom-nav">
+        {BOTTOM_5.map(({ href, label, icon: Icon }) => {
+          const active = isActive(href);
+          return (
+            <Link key={href} href={href} className={cn('bottom-nav-item', active && 'active')}>
+              <div className="bn-icon-wrap">
+                <Icon className={cn('w-[18px] h-[18px]', active && 'stroke-[2.5]')} />
+              </div>
+              <span>{label}</span>
+            </Link>
+          );
+        })}
+      </nav>
+    </>
   );
 }
