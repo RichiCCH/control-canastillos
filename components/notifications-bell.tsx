@@ -229,7 +229,7 @@ export default function NotificationsBell({ onOpenRecepciones }: Props) {
             </div>
 
             {/* Lista */}
-            <div className="overflow-y-auto flex-1">
+            <div className="overflow-y-auto flex-1 min-h-0">
               {(() => {
                 const sorted = [...notificaciones].sort(
                   (a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime()
