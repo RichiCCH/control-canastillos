@@ -24,6 +24,7 @@ export default function NotificationsBell({ onOpenRecepciones }: Props) {
   const [noLeidas, setNoLeidas] = useState(0);
   const [isOpen, setIsOpen] = useState(false);
   const [loading, setLoading] = useState(false);
+  const [verTodas, setVerTodas] = useState(false);
   const dropdownRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
@@ -191,68 +192,91 @@ export default function NotificationsBell({ onOpenRecepciones }: Props) {
 
             {/* Lista */}
             <div className="overflow-y-auto flex-1">
-              {notificaciones.length === 0 ? (
-                <div className="flex flex-col items-center justify-center py-10 gap-2">
-                  <Bell className="w-10 h-10 text-gray-200" />
-                  <p className="text-sm text-gray-400">Sin notificaciones</p>
-                </div>
-              ) : (
-                <div>
-                  {notificaciones.map(notif => {
-                    const accionLabel = getAccionLabel(notif.tipo);
-                    return (
-                      <div
-                        key={notif.id}
-                        className={`px-4 py-3 border-b border-gray-50 last:border-0 transition-colors ${!notif.leida ? 'bg-blue-50/50' : 'bg-white hover:bg-gray-50'
-                          }`}
-                      >
-                        <div className="flex gap-3">
-                          {/* Ícono */}
-                          <div className={`flex-shrink-0 h-8 w-8 rounded-lg flex items-center justify-center mt-0.5 ${TipoBg[notif.tipo] || 'bg-gray-100'
-                            }`}>
-                            <TipoIcon tipo={notif.tipo} />
-                          </div>
+              {(() => {
+                const sorted = [...notificaciones].sort(
+                  (a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime()
+                );
+                const visibles = verTodas ? sorted : sorted.filter(n => !n.leida);
 
-                          {/* Texto */}
-                          <div className="flex-1 min-w-0">
-                            <div className="flex items-start justify-between gap-2">
-                              <p className="text-sm font-semibold text-gray-900 leading-tight">
-                                {notif.titulo}
-                              </p>
-                              <div className="flex items-center gap-1.5 flex-shrink-0">
-                                {!notif.leida && (
-                                  <span className="h-2 w-2 rounded-full bg-blue-500 flex-shrink-0 mt-1" />
-                                )}
-                                <span className="text-[10px] text-gray-400">{formatFecha(notif.createdAt)}</span>
-                              </div>
+                if (visibles.length === 0 && !verTodas) {
+                  return (
+                    <div className="flex flex-col items-center justify-center py-10 gap-2">
+                      <CheckCircle className="w-10 h-10 text-gray-200" />
+                      <p className="text-sm text-gray-400">Todo al día</p>
+                      {notificaciones.length > 0 && (
+                        <button
+                          onClick={() => setVerTodas(true)}
+                          className="text-xs text-blue-600 hover:underline mt-1"
+                        >
+                          Ver historial
+                        </button>
+                      )}
+                    </div>
+                  );
+                }
+
+                if (notificaciones.length === 0) {
+                  return (
+                    <div className="flex flex-col items-center justify-center py-10 gap-2">
+                      <Bell className="w-10 h-10 text-gray-200" />
+                      <p className="text-sm text-gray-400">Sin notificaciones</p>
+                    </div>
+                  );
+                }
+
+                return (
+                  <div>
+                    {visibles.map(notif => {
+                      const accionLabel = getAccionLabel(notif.tipo);
+                      return (
+                        <div
+                          key={notif.id}
+                          className={`px-4 py-3 border-b border-gray-50 last:border-0 transition-colors ${!notif.leida ? 'bg-blue-50/50' : 'bg-white hover:bg-gray-50'}`}
+                        >
+                          <div className="flex gap-3">
+                            <div className={`flex-shrink-0 h-8 w-8 rounded-lg flex items-center justify-center mt-0.5 ${TipoBg[notif.tipo] || 'bg-gray-100'}`}>
+                              <TipoIcon tipo={notif.tipo} />
                             </div>
-                            <p className="text-xs text-gray-500 mt-0.5 line-clamp-2">{notif.mensaje}</p>
-
-                            {/* ── Botón de acción ── */}
-                            {accionLabel && (
-                              <button
-                                onClick={() => handleAccion(notif)}
-                                className="mt-2 flex items-center gap-1 text-xs font-semibold transition-colors rounded-lg px-2.5 py-1"
-                                style={{
-                                  color: notif.tipo === 'movimiento_rechazado' ? '#e11d48'
-                                    : notif.tipo === 'movimiento_aprobado' ? '#059669'
-                                      : '#2563eb',
-                                  background: notif.tipo === 'movimiento_rechazado' ? '#fff1f2'
-                                    : notif.tipo === 'movimiento_aprobado' ? '#f0fdf4'
-                                      : '#eff6ff',
-                                }}
-                              >
-                                <ArrowRight className="w-3 h-3" />
-                                {accionLabel}
-                              </button>
-                            )}
+                            <div className="flex-1 min-w-0">
+                              <div className="flex items-start justify-between gap-2">
+                                <p className="text-sm font-semibold text-gray-900 leading-tight">{notif.titulo}</p>
+                                <div className="flex items-center gap-1.5 flex-shrink-0">
+                                  {!notif.leida && <span className="h-2 w-2 rounded-full bg-blue-500 flex-shrink-0 mt-1" />}
+                                  <span className="text-[10px] text-gray-400">{formatFecha(notif.createdAt)}</span>
+                                </div>
+                              </div>
+                              <p className="text-xs text-gray-500 mt-0.5 line-clamp-2">{notif.mensaje}</p>
+                              {accionLabel && (
+                                <button
+                                  onClick={() => handleAccion(notif)}
+                                  className="mt-2 flex items-center gap-1 text-xs font-semibold transition-colors rounded-lg px-2.5 py-1"
+                                  style={{
+                                    color: notif.tipo === 'movimiento_rechazado' ? '#e11d48' : notif.tipo === 'movimiento_aprobado' ? '#059669' : '#2563eb',
+                                    background: notif.tipo === 'movimiento_rechazado' ? '#fff1f2' : notif.tipo === 'movimiento_aprobado' ? '#f0fdf4' : '#eff6ff',
+                                  }}
+                                >
+                                  <ArrowRight className="w-3 h-3" />
+                                  {accionLabel}
+                                </button>
+                              )}
+                            </div>
                           </div>
                         </div>
-                      </div>
-                    );
-                  })}
-                </div>
-              )}
+                      );
+                    })}
+                  </div>
+                );
+              })()}
+            </div>
+
+            {/* Footer: Ver todas / Ver solo no leídas */}
+            <div className="border-t border-border/50 px-4 py-2.5 flex-shrink-0">
+              <button
+                onClick={() => setVerTodas(v => !v)}
+                className="w-full text-xs text-center text-blue-600 hover:text-blue-700 font-medium py-1 rounded-lg hover:bg-blue-50 transition-colors"
+              >
+                {verTodas ? 'Ver solo no leídas' : `Ver todas (${notificaciones.length})`}
+              </button>
             </div>
           </div>
         </>
