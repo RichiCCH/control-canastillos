@@ -29,6 +29,7 @@ jobs:
           # Preparar la carpeta para el despliegue standalone a Azure
           cp -r public .next/standalone/
           cp -r .next/static .next/standalone/.next/
+          cp web.config .next/standalone/
           # zip the standalone app to speed up deployment artifact upload
           cd .next/standalone
           zip -qq -r ../../nextjs-app.zip .
