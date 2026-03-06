@@ -42,18 +42,23 @@ jobs:
           tenant-id: ${{ secrets.AZUREAPPSERVICE_TENANTID_951CEB9D9384497D80207E5CCB392EDB }}
           subscription-id: ${{ secrets.AZUREAPPSERVICE_SUBSCRIPTIONID_59A6DABC242940EAB20CA88C6CC7B617 }}
 
-      - name: Deploy zip to Azure Web App
+      - name: Configure and deploy
         run: |
+          # Limpiar archivos viejos de Oryx
+          az webapp ssh --resource-group approlon --name ${{ env.AZURE_WEBAPP_NAME }} \
+            --command "rm -f /home/site/wwwroot/oryx-manifest.toml /home/site/wwwroot/node_modules.tar.gz" || true
+
+          # Configurar startup command
+          az webapp config set \
+            --resource-group approlon \
+            --name ${{ env.AZURE_WEBAPP_NAME }} \
+            --startup-file "node server.js"
+
+          # Deploy del zip
           az webapp deploy \
             --resource-group approlon \
             --name ${{ env.AZURE_WEBAPP_NAME }} \
             --src-path app.zip \
             --type zip \
+            --clean true \
             --restart true
-
-      - name: Set startup command
-        run: |
-          az webapp config set \
-            --resource-group approlon \
-            --name ${{ env.AZURE_WEBAPP_NAME }} \
-            --startup-file "node server.js"
