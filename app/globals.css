@@ -150,6 +150,16 @@
   .btn-sm { @apply px-3 py-1.5 text-xs; }
   .btn-full { @apply w-full; }
 
+  /* ── CARD-STAT (igual a card-elevated pero sin translateY en hover) ── */
+  .card-stat {
+    @apply bg-card rounded-2xl border border-black/5;
+    box-shadow: 0 1px 3px 0 rgba(0,0,0,0.04), 0 6px 16px -4px rgba(0,0,0,0.06);
+    transition: box-shadow 0.2s ease;
+  }
+  .card-stat:hover {
+    box-shadow: 0 2px 8px 0 rgba(0,0,0,0.07), 0 12px 24px -6px rgba(0,0,0,0.09);
+  }
+
   /* ── LEGACY (compat) ── */
   .card { @apply card-elevated; }
 }
