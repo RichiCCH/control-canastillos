@@ -12,13 +12,11 @@ interface User {
   id: number;
   nombre: string;
   email: string | null;
-  rol: 'admin' | 'supervisor' | 'operador';
+  rol: 'admin' | 'encargado' | 'supervisor' | 'operador';
   activo: number;
   almacenId: number | null;
-  almacen?: {
-    id: number;
-    nombre: string;
-  } | null;
+  almacen?: { id: number; nombre: string } | null;
+  almacenesAsignados?: { id: number; nombre: string }[]; // Solo para encargados
   createdAt: string;
   updatedAt: string;
 }
@@ -35,8 +33,9 @@ export default function AdminUsuariosPage() {
     nombre: '',
     email: '',
     password: '',
-    rol: 'operador' as 'admin' | 'supervisor' | 'operador',
+    rol: 'operador' as 'admin' | 'encargado' | 'supervisor' | 'operador',
     almacenId: '',
+    almacenesIds: [] as number[], // Para encargado multi-almacén
   });
 
   useEffect(() => {
@@ -75,12 +74,15 @@ export default function AdminUsuariosPage() {
   const handleOpenModal = (user?: User) => {
     if (user) {
       setEditingUser(user);
+      // Si es encargado, cargar los almacenes que ya tiene asignados
+      const almacenesActuales = user.almacenesAsignados?.map(a => a.id) ?? [];
       setFormData({
         nombre: user.nombre,
         email: user.email || '',
         password: '',
         rol: user.rol,
         almacenId: user.almacenId?.toString() || '',
+        almacenesIds: almacenesActuales,
       });
     } else {
       setEditingUser(null);
@@ -90,6 +92,7 @@ export default function AdminUsuariosPage() {
         password: '',
         rol: 'operador',
         almacenId: '',
+        almacenesIds: [],
       });
     }
     setShowModal(true);
@@ -110,11 +113,13 @@ export default function AdminUsuariosPage() {
       const method = editingUser ? 'PATCH' : 'POST';
 
       // Preparar el body
+      // Para encargado: SIEMPRE enviar almacenesIds (aunque sea vacío) para que la API actualice la pivote
       const bodyData: any = {
         nombre: formData.nombre,
         email: formData.email || null,
         rol: formData.rol,
         almacenId: formData.almacenId ? parseInt(formData.almacenId) : null,
+        almacenesIds: formData.rol === 'encargado' ? formData.almacenesIds : undefined,
       };
 
       // Solo incluir password si se proporcionó
@@ -171,14 +176,16 @@ export default function AdminUsuariosPage() {
   };
 
   const getRolBadge = (rol: string) => {
-    const colors: Record<string, string> = {
-      admin: 'bg-red-100 text-red-800',
-      supervisor: 'bg-blue-100 text-blue-800',
-      operador: 'bg-green-100 text-green-800',
+    const cfg: Record<string, { color: string; label: string }> = {
+      admin: { color: 'bg-red-100 text-red-800', label: 'Admin' },
+      encargado: { color: 'bg-purple-100 text-purple-800', label: 'Encargado' },
+      supervisor: { color: 'bg-blue-100 text-blue-800', label: 'Supervisor' },
+      operador: { color: 'bg-green-100 text-green-800', label: 'Operador' },
     };
+    const { color, label } = cfg[rol] ?? { color: 'bg-gray-100 text-gray-800', label: rol };
     return (
-      <span className={`px-2 py-1 rounded text-xs font-semibold ${colors[rol]}`}>
-        {rol.toUpperCase()}
+      <span className={`px-2 py-1 rounded text-xs font-semibold ${color}`}>
+        {label}
       </span>
     );
   };
@@ -227,32 +234,31 @@ export default function AdminUsuariosPage() {
         {/* Message Alert */}
         {message && (
           <div
-            className={`mb-6 p-4 rounded-lg ${
-              message.type === 'success'
-                ? 'bg-green-50 border border-green-200 text-green-800'
-                : 'bg-red-50 border border-red-200 text-red-800'
-            }`}
+            className={`mb-6 p-4 rounded-lg ${message.type === 'success'
+              ? 'bg-green-50 border border-green-200 text-green-800'
+              : 'bg-red-50 border border-red-200 text-red-800'
+              }`}
           >
             {message.text}
           </div>
         )}
 
         {/* Stats Cards */}
-        <div className="grid grid-cols-1 md:grid-cols-4 gap-6 mb-8">
+        <div className="grid grid-cols-2 md:grid-cols-4 gap-4 mb-8">
           <div className="card bg-white">
-            <div className="text-[#64748B] text-sm font-medium mb-1">Total Usuarios</div>
+            <div className="text-[#64748B] text-sm font-medium mb-1">Total</div>
             <div className="text-3xl font-bold text-[#1F2937]">{users.length}</div>
           </div>
           <div className="card bg-white">
-            <div className="text-[#64748B] text-sm font-medium mb-1">Administradores</div>
+            <div className="text-[#64748B] text-sm font-medium mb-1">Admins</div>
             <div className="text-3xl font-bold text-red-600">
               {users.filter((u) => u.rol === 'admin').length}
             </div>
           </div>
           <div className="card bg-white">
-            <div className="text-[#64748B] text-sm font-medium mb-1">Supervisores</div>
-            <div className="text-3xl font-bold text-blue-600">
-              {users.filter((u) => u.rol === 'supervisor').length}
+            <div className="text-[#64748B] text-sm font-medium mb-1">Encargados</div>
+            <div className="text-3xl font-bold text-purple-600">
+              {users.filter((u) => u.rol === 'encargado').length}
             </div>
           </div>
           <div className="card bg-white">
@@ -262,6 +268,7 @@ export default function AdminUsuariosPage() {
             </div>
           </div>
         </div>
+
 
         {/* Users Table */}
         <div className="card bg-white overflow-hidden">
@@ -301,20 +308,28 @@ export default function AdminUsuariosPage() {
                       <div className="text-sm text-gray-900">{user.email || '-'}</div>
                     </td>
                     <td className="px-4 py-3 whitespace-nowrap">{getRolBadge(user.rol)}</td>
-                    <td className="hidden md:table-cell px-4 py-3 whitespace-nowrap">
-                      <div className="text-sm text-gray-900">
-                        {user.almacen?.nombre || (
-                          <span className="text-gray-400 italic">Sin asignar</span>
-                        )}
-                      </div>
+                    <td className="hidden md:table-cell px-4 py-3">
+                      {user.rol === 'encargado' && user.almacenesAsignados && user.almacenesAsignados.length > 0 ? (
+                        <div className="flex flex-wrap gap-1">
+                          {user.almacenesAsignados.map(a => (
+                            <span key={a.id} className="px-1.5 py-0.5 bg-purple-50 text-purple-700 border border-purple-200 rounded text-[11px] font-medium">
+                              {a.nombre}
+                            </span>
+                          ))}
+                        </div>
+                      ) : (
+                        <div className="text-sm text-gray-900">
+                          {user.almacen?.nombre || <span className="text-gray-400 italic">Sin asignar</span>}
+                        </div>
+                      )}
                     </td>
+
                     <td className="px-4 py-3 whitespace-nowrap">
                       <span
-                        className={`px-2 py-1 rounded text-xs font-semibold ${
-                          user.activo === 1
-                            ? 'bg-green-100 text-green-800'
-                            : 'bg-gray-100 text-gray-800'
-                        }`}
+                        className={`px-2 py-1 rounded text-xs font-semibold ${user.activo === 1
+                          ? 'bg-green-100 text-green-800'
+                          : 'bg-gray-100 text-gray-800'
+                          }`}
                       >
                         {user.activo === 1 ? 'ACTIVO' : 'INACT.'}
                       </span>
@@ -329,11 +344,10 @@ export default function AdminUsuariosPage() {
                         </button>
                         <button
                           onClick={() => handleToggleActivo(user)}
-                          className={`py-1 ${
-                            user.activo === 1
-                              ? 'text-red-600 hover:text-red-800'
-                              : 'text-green-600 hover:text-green-800'
-                          }`}
+                          className={`py-1 ${user.activo === 1
+                            ? 'text-red-600 hover:text-red-800'
+                            : 'text-green-600 hover:text-green-800'
+                            }`}
                         >
                           {user.activo === 1 ? 'Desactivar' : 'Activar'}
                         </button>
@@ -395,43 +409,65 @@ export default function AdminUsuariosPage() {
                 </div>
 
                 <div className="mb-4">
-                  <label className="block text-sm font-medium text-gray-700 mb-2">
-                    Rol *
-                  </label>
+                  <label className="block text-sm font-medium text-gray-700 mb-2">Rol *</label>
                   <select
                     value={formData.rol}
-                    onChange={(e) =>
-                      setFormData({
-                        ...formData,
-                        rol: e.target.value as 'admin' | 'supervisor' | 'operador',
-                      })
-                    }
+                    onChange={(e) => setFormData({ ...formData, rol: e.target.value as any, almacenesIds: [] })}
                     required
                     className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
                   >
                     <option value="operador">Operador</option>
+                    <option value="encargado">Encargado de Área</option>
                     <option value="supervisor">Supervisor</option>
                     <option value="admin">Administrador</option>
                   </select>
                 </div>
 
-                <div className="mb-6">
-                  <label className="block text-sm font-medium text-gray-700 mb-2">
-                    Almacén
-                  </label>
-                  <select
-                    value={formData.almacenId}
-                    onChange={(e) => setFormData({ ...formData, almacenId: e.target.value })}
-                    className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
-                  >
-                    <option value="">Sin asignar</option>
-                    {almacenes.map((almacen) => (
-                      <option key={almacen.id} value={almacen.id}>
-                        {almacen.nombre}
-                      </option>
-                    ))}
-                  </select>
-                </div>
+                {/* Almacenes: multi-selección para encargado, single para el resto */}
+                {formData.rol === 'encargado' ? (
+                  <div className="mb-6">
+                    <label className="block text-sm font-medium text-gray-700 mb-1">
+                      Almacenes asignados <span className="text-purple-600 font-semibold">(multi-selección)</span>
+                    </label>
+                    <p className="text-xs text-gray-400 mb-2">Selecciona uno o más almacenes que supervisará este encargado.</p>
+                    <div className="border border-gray-300 rounded-lg p-3 max-h-40 overflow-y-auto space-y-2">
+                      {almacenes.map(a => (
+                        <label key={a.id} className="flex items-center gap-2 cursor-pointer hover:bg-purple-50 rounded px-2 py-1">
+                          <input
+                            type="checkbox"
+                            className="accent-purple-600"
+                            checked={formData.almacenesIds.includes(a.id)}
+                            onChange={(e) => {
+                              const ids = e.target.checked
+                                ? [...formData.almacenesIds, a.id]
+                                : formData.almacenesIds.filter(id => id !== a.id);
+                              setFormData({ ...formData, almacenesIds: ids, almacenId: ids[0]?.toString() ?? '' });
+                            }}
+                          />
+                          <span className="text-sm">{a.nombre}</span>
+                        </label>
+                      ))}
+                    </div>
+                    {formData.almacenesIds.length === 0 && (
+                      <p className="text-xs text-red-500 mt-1">Selecciona al menos un almacén.</p>
+                    )}
+                  </div>
+                ) : (
+
+                  <div className="mb-6">
+                    <label className="block text-sm font-medium text-gray-700 mb-2">Almacén</label>
+                    <select
+                      value={formData.almacenId}
+                      onChange={(e) => setFormData({ ...formData, almacenId: e.target.value })}
+                      className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                    >
+                      <option value="">Sin asignar</option>
+                      {almacenes.map((almacen) => (
+                        <option key={almacen.id} value={almacen.id}>{almacen.nombre}</option>
+                      ))}
+                    </select>
+                  </div>
+                )}
 
                 <div className="flex gap-3">
                   <button

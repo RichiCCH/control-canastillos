@@ -1,9 +1,9 @@
 'use client';
 
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useMemo } from 'react';
 import { useSession } from 'next-auth/react';
 import { generarPDFRecepcion } from '@/lib/utils/pdf';
-import { CheckCircle, XCircle, Inbox, X, Package } from 'lucide-react';
+import { CheckCircle, XCircle, Inbox, X, Package, Search } from 'lucide-react';
 
 interface Movimiento {
     id: number;
@@ -11,6 +11,7 @@ interface Movimiento {
     observaciones: string | null;
     fechaSolicitud: string;
     almacenOrigen: { id: number; nombre: string };
+    almacenDestino?: { id: number; nombre: string };
     usuarioSolicitante: { id: number; nombre: string };
     detalles: Array<{
         id: number;
@@ -32,13 +33,6 @@ const TIPO_EMOJI: Record<string, string> = {
     caja: '📦',
 };
 
-const TIPO_COLOR: Record<string, { bg: string; color: string }> = {
-    canastillo_negro: { bg: '#1f2937', color: '#fff' },
-    canastillo_color: { bg: '#7c3aed', color: '#fff' },
-    cooler: { bg: '#0284c7', color: '#fff' },
-    caja: { bg: '#b45309', color: '#fff' },
-};
-
 export default function ModalRecepciones({ open, onClose, onSuccess }: Props) {
     const { data: session } = useSession();
     const [movimientos, setMovimientos] = useState<Movimiento[]>([]);
@@ -48,26 +42,39 @@ export default function ModalRecepciones({ open, onClose, onSuccess }: Props) {
     const [message, setMessage] = useState<{ type: 'success' | 'error'; text: string } | null>(null);
     const [modalRechazo, setModalRechazo] = useState<{ open: boolean; id: number | null }>({ open: false, id: null });
     const [motivoRechazo, setMotivoRechazo] = useState('');
+    const [busqueda, setBusqueda] = useState('');
 
+    const rol = (session?.user as any)?.rol;
     const almacenId = (session?.user as any)?.almacenId as number | undefined;
+    const almacenesUsuario: { id: number }[] = (session?.user as any)?.almacenes || [];
 
     useEffect(() => {
-        if (open && almacenId) {
+        if (open) {
             setMessage(null);
+            setBusqueda('');
             fetchData();
         }
-    }, [open, almacenId]);
+    }, [open, session]);
 
     const fetchData = async () => {
-        if (!almacenId) return;
+        if (!session?.user) return;
         setLoading(true);
         try {
-            const [mRes, aRes] = await Promise.all([
-                fetch(`/api/movimientos?almacenDestinoId=${almacenId}`),
-                fetch('/api/almacenes'),
-            ]);
-            if (mRes.ok) setMovimientos(await mRes.json());
+            const aRes = await fetch('/api/almacenes');
             if (aRes.ok) setAlmacenes(await aRes.json());
+
+            if (rol === 'encargado' && almacenesUsuario.length > 0) {
+                const results = await Promise.all(
+                    almacenesUsuario.map(a =>
+                        fetch(`/api/movimientos?almacenDestinoId=${a.id}`).then(r => r.json())
+                    )
+                );
+                const todos: Movimiento[] = results.flat();
+                setMovimientos(todos.filter((m, i, arr) => arr.findIndex(x => x.id === m.id) === i));
+            } else if (almacenId) {
+                const mRes = await fetch(`/api/movimientos?almacenDestinoId=${almacenId}`);
+                if (mRes.ok) setMovimientos(await mRes.json());
+            }
         } finally { setLoading(false); }
     };
 
@@ -85,7 +92,7 @@ export default function ModalRecepciones({ open, onClose, onSuccess }: Props) {
 
             // PDF
             const mov = movimientos.find(m => m.id === id);
-            const destino = almacenes.find(a => a.id === almacenId);
+            const destino = almacenes.find(a => a.id === (mov?.almacenDestino?.id || almacenId));
             if (mov && destino) {
                 generarPDFRecepcion({
                     id: mov.id,
@@ -135,6 +142,21 @@ export default function ModalRecepciones({ open, onClose, onSuccess }: Props) {
     const totalUds = (m: Movimiento) => m.detalles.reduce((s, d) => s + d.cantidad, 0);
     const formatDate = (iso: string) => new Date(iso).toLocaleDateString('es-ES', { day: '2-digit', month: '2-digit', year: 'numeric' });
 
+    // Filtrar movimientos usando el buscador
+    const filtrados = useMemo(() => {
+        let items = [...movimientos];
+        if (busqueda.trim()) {
+            const q = busqueda.trim().toLowerCase();
+            items = items.filter(m =>
+                String(m.id).includes(q) ||
+                m.almacenOrigen.nombre.toLowerCase().includes(q) ||
+                m.usuarioSolicitante.nombre.toLowerCase().includes(q) ||
+                m.detalles.some(d => d.producto.nombre.toLowerCase().includes(q))
+            );
+        }
+        return items;
+    }, [movimientos, busqueda]);
+
     if (!open) return null;
 
     return (
@@ -158,7 +180,7 @@ export default function ModalRecepciones({ open, onClose, onSuccess }: Props) {
                             <div>
                                 <h2 className="text-base font-bold text-white">Recepciones Pendientes</h2>
                                 <p className="text-xs text-emerald-100">
-                                    {loading ? 'Cargando...' : `${movimientos.length} envío${movimientos.length !== 1 ? 's' : ''} por aprobar`}
+                                    {loading ? 'Cargando...' : `${filtrados.length} envío${filtrados.length !== 1 ? 's' : ''} por aprobar`}
                                 </p>
                             </div>
                         </div>
@@ -168,6 +190,20 @@ export default function ModalRecepciones({ open, onClose, onSuccess }: Props) {
                         >
                             <X className="w-4 h-4 text-white" />
                         </button>
+                    </div>
+
+                    {/* Buscador */}
+                    <div className="p-4 border-b border-gray-100 bg-gray-50/50 flex-shrink-0">
+                        <div className="relative">
+                            <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400" />
+                            <input
+                                type="text"
+                                value={busqueda}
+                                onChange={e => setBusqueda(e.target.value)}
+                                placeholder="Buscar por #número, almacén o producto..."
+                                className="w-full pl-9 pr-4 py-2 bg-white border border-gray-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-emerald-500/20 focus:border-emerald-500 transition-all"
+                            />
+                        </div>
                     </div>
 
                     {/* Message banner */}
@@ -185,13 +221,13 @@ export default function ModalRecepciones({ open, onClose, onSuccess }: Props) {
                     )}
 
                     {/* Content */}
-                    <div className="overflow-y-auto flex-1 px-4 pb-4 pt-3">
+                    <div className="overflow-y-auto flex-1 px-4 mb-4 pt-4">
                         {loading ? (
                             <div className="flex items-center justify-center py-12 gap-3">
                                 <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-emerald-500" />
                                 <span className="text-sm text-gray-400">Cargando recepciones...</span>
                             </div>
-                        ) : !almacenId ? (
+                        ) : (!almacenId && rol !== 'encargado') ? (
                             <div className="py-12 text-center">
                                 <Package className="mx-auto h-10 w-10 text-gray-300 mb-2" />
                                 <p className="text-sm text-gray-400">Sin almacén asignado</p>
@@ -202,20 +238,23 @@ export default function ModalRecepciones({ open, onClose, onSuccess }: Props) {
                                 <p className="font-semibold text-gray-700">Todo al día</p>
                                 <p className="text-sm text-gray-400 mt-1">No hay recepciones pendientes</p>
                             </div>
+                        ) : filtrados.length === 0 ? (
+                            <div className="py-12 text-center">
+                                <Search className="mx-auto h-10 w-10 text-gray-300 mb-2" />
+                                <p className="text-sm text-gray-500">No hay coincidencias para "{busqueda}"</p>
+                            </div>
                         ) : (
-                            <div className="space-y-3">
-                                {movimientos.map((mov) => (
+                            <div className="space-y-4">
+                                {filtrados.map((mov) => (
                                     <div
                                         key={mov.id}
-                                        className="rounded-2xl border bg-white overflow-hidden"
-                                        style={{ borderColor: '#E9ECEF', boxShadow: '0 1px 4px rgba(0,0,0,.05)' }}
+                                        className="rounded-2xl border bg-white overflow-hidden shadow-sm hover:shadow-md transition-shadow"
+                                        style={{ borderColor: '#E9ECEF' }}
                                     >
                                         {/* Cabecera de la tarjeta */}
                                         <div className="px-4 py-3 bg-gray-50 border-b border-gray-100 flex items-center justify-between gap-2">
                                             <div className="flex items-center gap-2 min-w-0">
-                                                <span
-                                                    className="text-[10px] font-bold px-2 py-0.5 rounded-full bg-blue-100 text-blue-700"
-                                                >
+                                                <span className="text-[10px] font-bold px-2 py-0.5 rounded-full bg-blue-100 text-blue-700">
                                                     #{mov.id}
                                                 </span>
                                                 <span className="text-xs font-semibold text-gray-700 truncate">
@@ -225,36 +264,31 @@ export default function ModalRecepciones({ open, onClose, onSuccess }: Props) {
                                             <span className="text-xs text-gray-400 flex-shrink-0">{formatDate(mov.fechaSolicitud)}</span>
                                         </div>
 
-                                        {/* Productos */}
+                                        {/* Productos en columna (como en la página web) */}
                                         <div className="px-4 py-3">
-                                            <div className="flex flex-wrap gap-1.5 mb-2">
-                                                {mov.detalles.map(d => {
-                                                    const tc = TIPO_COLOR[d.producto.tipo] || { bg: '#374151', color: '#fff' };
-                                                    return (
-                                                        <span
-                                                            key={d.id}
-                                                            className="inline-flex items-center gap-1 text-xs font-semibold px-2.5 py-1 rounded-full"
-                                                            style={{ background: tc.bg + '18', color: tc.bg }}
-                                                        >
-                                                            {TIPO_EMOJI[d.producto.tipo] || '📦'}
-                                                            {d.producto.nombre}
-                                                            <span className="font-bold ml-0.5">× {d.cantidad}</span>
+                                            <div className="flex flex-col gap-1 mb-2">
+                                                {mov.detalles.map(d => (
+                                                    <div key={d.id} className="flex items-center gap-2">
+                                                        <span className="text-sm">{TIPO_EMOJI[d.producto.tipo] || '📦'}</span>
+                                                        <span className="text-sm text-gray-700">{d.producto.nombre}</span>
+                                                        <span className="text-xs font-bold text-emerald-700 bg-emerald-50 px-1.5 py-0.5 rounded-full">
+                                                            × {d.cantidad}
                                                         </span>
-                                                    );
-                                                })}
+                                                    </div>
+                                                ))}
                                             </div>
-                                            <p className="text-xs text-gray-400">
+                                            <p className="text-xs text-gray-400 border-t border-gray-50 pt-2 mt-2">
                                                 {mov.usuarioSolicitante.nombre}
                                                 {' · '}
                                                 <span className="font-semibold text-gray-600">{totalUds(mov)} unidades</span>
                                                 {mov.observaciones && (
-                                                    <> · <span className="italic text-blue-600">{mov.observaciones}</span></>
+                                                    <> · <span className="text-blue-600 bg-blue-50 px-1.5 py-0.5 rounded">{mov.observaciones}</span></>
                                                 )}
                                             </p>
                                         </div>
 
                                         {/* Botones */}
-                                        <div className="px-4 pb-3 flex gap-2">
+                                        <div className="px-4 pb-4 flex gap-2">
                                             <button
                                                 onClick={() => handleAprobar(mov.id)}
                                                 disabled={processing === mov.id}
@@ -284,7 +318,7 @@ export default function ModalRecepciones({ open, onClose, onSuccess }: Props) {
                     </div>
 
                     {/* Footer */}
-                    <div className="px-4 py-3 border-t border-gray-100 flex-shrink-0">
+                    <div className="px-4 py-3 border-t border-gray-100 flex-shrink-0 bg-white">
                         <button
                             onClick={onClose}
                             className="w-full py-2.5 rounded-xl text-sm font-semibold bg-gray-100 hover:bg-gray-200 text-gray-700 transition-colors"

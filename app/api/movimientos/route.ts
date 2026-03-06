@@ -1,7 +1,7 @@
 import { NextResponse } from 'next/server';
 import { db } from '@/db';
 import { movimientos, movimientosDetalle, inventario, productos, almacenes, users } from '@/db/schema';
-import { eq, and, sql } from 'drizzle-orm';
+import { eq, and, sql, inArray, or } from 'drizzle-orm';
 import { crearNotificacionNuevoMovimiento } from '@/lib/notifications';
 
 // GET - Obtener movimientos pendientes para un almacén
@@ -9,66 +9,82 @@ export async function GET(request: Request) {
   try {
     const { searchParams } = new URL(request.url);
     const almacenDestinoId = searchParams.get('almacenDestinoId');
+    const almacenesParam = searchParams.get('almacenesDestinoIds'); // "1,2,3" para encargado multi
 
-    if (!almacenDestinoId) {
+    // Construir lista de IDs destino
+    let destIds: number[] = [];
+    if (almacenesParam) {
+      destIds = almacenesParam.split(',').map(Number).filter(Boolean);
+    } else if (almacenDestinoId) {
+      destIds = [parseInt(almacenDestinoId)];
+    }
+
+    if (destIds.length === 0) {
       return NextResponse.json(
         { error: 'almacenDestinoId es requerido' },
         { status: 400 }
       );
     }
 
-    // Obtener movimientos pendientes
-    const movimientosPendientes = await db
-      .select({
-        id: movimientos.id,
-        estado: movimientos.estado,
-        observaciones: movimientos.observaciones,
-        fechaSolicitud: movimientos.fechaSolicitud,
-        almacenOrigen: {
-          id: almacenes.id,
-          nombre: almacenes.nombre,
-        },
-        usuarioSolicitante: {
-          id: users.id,
-          nombre: users.nombre,
-        },
-      })
-      .from(movimientos)
-      .where(
-        and(
-          eq(movimientos.almacenDestinoId, parseInt(almacenDestinoId)),
-          eq(movimientos.estado, 'pendiente')
-        )
-      )
-      .leftJoin(almacenes, eq(movimientos.almacenOrigenId, almacenes.id))
-      .leftJoin(users, eq(movimientos.usuarioSolicitanteId, users.id));
+    const destinoWhere = destIds.length === 1
+      ? eq(movimientos.almacenDestinoId, destIds[0])
+      : inArray(movimientos.almacenDestinoId, destIds);
 
-    // Para cada movimiento, obtener sus detalles
-    const movimientosConDetalles = await Promise.all(
-      movimientosPendientes.map(async (mov) => {
-        const detalles = await db
-          .select({
-            id: movimientosDetalle.id,
-            cantidad: movimientosDetalle.cantidad,
-            producto: {
-              id: productos.id,
-              codigo: productos.codigo,
-              nombre: productos.nombre,
-              tipo: productos.tipo,
-            },
-          })
-          .from(movimientosDetalle)
-          .where(eq(movimientosDetalle.movimientoId, mov.id))
-          .leftJoin(productos, eq(movimientosDetalle.productoId, productos.id));
+    // Una sola query con JOIN para traer movimientos + detalles en paralelo
+    const [rows, detallesRows] = await Promise.all([
+      db.select({
+          id: movimientos.id,
+          estado: movimientos.estado,
+          observaciones: movimientos.observaciones,
+          fechaSolicitud: movimientos.fechaSolicitud,
+          almacenOrigenId: almacenes.id,
+          almacenOrigenNombre: almacenes.nombre,
+          usuarioSolicitanteId: users.id,
+          usuarioSolicitanteNombre: users.nombre,
+        })
+        .from(movimientos)
+        .where(and(destinoWhere, eq(movimientos.estado, 'pendiente')))
+        .leftJoin(almacenes, eq(movimientos.almacenOrigenId, almacenes.id))
+        .leftJoin(users, eq(movimientos.usuarioSolicitanteId, users.id)),
 
-        return {
-          ...mov,
-          detalles,
-        };
-      })
-    );
+      // Todos los detalles de movimientos pendientes en una sola query
+      db.select({
+          movimientoId: movimientosDetalle.movimientoId,
+          id: movimientosDetalle.id,
+          cantidad: movimientosDetalle.cantidad,
+          productoId: productos.id,
+          productoCodigo: productos.codigo,
+          productoNombre: productos.nombre,
+          productoTipo: productos.tipo,
+        })
+        .from(movimientosDetalle)
+        .innerJoin(movimientos, eq(movimientosDetalle.movimientoId, movimientos.id))
+        .innerJoin(productos, eq(movimientosDetalle.productoId, productos.id))
+        .where(and(destinoWhere, eq(movimientos.estado, 'pendiente'))),
+    ]);
 
-    return NextResponse.json(movimientosConDetalles);
+    // Agrupar detalles por movimientoId
+    const detallesPorMov = new Map<number, typeof detallesRows>();
+    for (const d of detallesRows) {
+      if (!detallesPorMov.has(d.movimientoId!)) detallesPorMov.set(d.movimientoId!, []);
+      detallesPorMov.get(d.movimientoId!)!.push(d);
+    }
+
+    const result = rows.map(mov => ({
+      id: mov.id,
+      estado: mov.estado,
+      observaciones: mov.observaciones,
+      fechaSolicitud: mov.fechaSolicitud,
+      almacenOrigen: { id: mov.almacenOrigenId!, nombre: mov.almacenOrigenNombre! },
+      usuarioSolicitante: { id: mov.usuarioSolicitanteId!, nombre: mov.usuarioSolicitanteNombre! },
+      detalles: (detallesPorMov.get(mov.id) || []).map(d => ({
+        id: d.id,
+        cantidad: d.cantidad,
+        producto: { id: d.productoId!, codigo: d.productoCodigo!, nombre: d.productoNombre!, tipo: d.productoTipo! },
+      })),
+    }));
+
+    return NextResponse.json(result);
   } catch (error) {
     console.error('Error al obtener movimientos:', error);
     return NextResponse.json(
@@ -82,7 +98,7 @@ export async function GET(request: Request) {
 export async function POST(request: Request) {
   try {
     const body = await request.json();
-    const { almacenDestinoId, usuarioSolicitanteId, observaciones, detalles } = body;
+    const { almacenDestinoId, usuarioSolicitanteId, observaciones, detalles, almacenOrigenId: bodyAlmacenOrigenId } = body;
 
     if (!almacenDestinoId || !usuarioSolicitanteId || !detalles || detalles.length === 0) {
       return NextResponse.json(
@@ -105,7 +121,8 @@ export async function POST(request: Request) {
       );
     }
 
-    const almacenOrigenId = usuario[0].almacenId;
+    // Si el front-end mandó un origen, usarlo (útil para encargados multialmacén), si no usar el default.
+    const almacenOrigenId = bodyAlmacenOrigenId ? parseInt(bodyAlmacenOrigenId) : usuario[0].almacenId;
 
     // Verificar que el almacén de origen tenga suficiente inventario
     for (const detalle of detalles) {

@@ -1,4 +1,4 @@
-import { pgTable, serial, varchar, timestamp, pgEnum, integer, text, decimal, boolean } from 'drizzle-orm/pg-core';
+import { pgTable, serial, varchar, timestamp, pgEnum, integer, text, decimal, boolean, index, uniqueIndex } from 'drizzle-orm/pg-core';
 import { relations } from 'drizzle-orm';
 
 // Enum para el tipo de productos
@@ -49,6 +49,7 @@ export const users = pgTable('users', {
   password: varchar('password', { length: 255 }),
   almacenId: integer('almacen_id').references(() => almacenes.id), // Almacén principal/defecto
   rol: varchar('rol', { length: 50 }),
+  activo: integer('activo').default(1).notNull(),
   createdAt: timestamp('created_at').defaultNow().notNull(),
 });
 
@@ -59,7 +60,10 @@ export const usuariosAlmacenes = pgTable('usuarios_almacenes', {
   almacenId: integer('almacen_id').references(() => almacenes.id, { onDelete: 'cascade' }).notNull(),
   esPrincipal: integer('es_principal').default(0).notNull(), // 1 = almacén principal del usuario
   createdAt: timestamp('created_at').defaultNow().notNull(),
-});
+}, (t) => [
+  index('idx_usuarios_almacenes_usuario_id').on(t.usuarioId),
+  index('idx_usuarios_almacenes_almacen_id').on(t.almacenId),
+]);
 
 // Tabla de productos (catálogo de tipos de productos)
 export const productos = pgTable('productos', {
@@ -82,7 +86,10 @@ export const inventario = pgTable('inventario', {
   almacenId: integer('almacen_id').references(() => almacenes.id).notNull(),
   cantidad: integer('cantidad').default(0).notNull(),
   updatedAt: timestamp('updated_at').defaultNow().notNull(),
-});
+}, (t) => [
+  uniqueIndex('idx_inventario_producto_almacen').on(t.productoId, t.almacenId),
+  index('idx_inventario_almacen_id').on(t.almacenId),
+]);
 
 // Tabla de movimientos (cabecera del movimiento)
 export const movimientos = pgTable('movimientos', {
@@ -100,7 +107,14 @@ export const movimientos = pgTable('movimientos', {
   fechaSolicitud: timestamp('fecha_solicitud').defaultNow().notNull(),
   fechaAprobacion: timestamp('fecha_aprobacion'),
   createdAt: timestamp('created_at').defaultNow().notNull(),
-});
+}, (t) => [
+  index('idx_movimientos_estado').on(t.estado),
+  index('idx_movimientos_almacen_destino_estado').on(t.almacenDestinoId, t.estado),
+  index('idx_movimientos_almacen_origen_id').on(t.almacenOrigenId),
+  index('idx_movimientos_usuario_solicitante_id').on(t.usuarioSolicitanteId),
+  index('idx_movimientos_tipo_movimiento').on(t.tipoMovimiento),
+  index('idx_movimientos_created_at').on(t.createdAt),
+]);
 
 // Tabla de detalle de movimientos (items del movimiento)
 export const movimientosDetalle = pgTable('movimientos_detalle', {
@@ -110,7 +124,10 @@ export const movimientosDetalle = pgTable('movimientos_detalle', {
   cantidad: integer('cantidad').notNull(),
   precioUnitario: decimal('precio_unitario', { precision: 10, scale: 2 }),
   createdAt: timestamp('created_at').defaultNow().notNull(),
-});
+}, (t) => [
+  index('idx_movimientos_detalle_movimiento_id').on(t.movimientoId),
+  index('idx_movimientos_detalle_producto_id').on(t.productoId),
+]);
 
 // Tabla de notificaciones
 export const notificaciones = pgTable('notificaciones', {
@@ -122,7 +139,10 @@ export const notificaciones = pgTable('notificaciones', {
   mensaje: text('mensaje').notNull(),
   leida: boolean('leida').default(false).notNull(),
   createdAt: timestamp('created_at').defaultNow().notNull(),
-});
+}, (t) => [
+  index('idx_notificaciones_usuario_id').on(t.usuarioId),
+  index('idx_notificaciones_usuario_leida').on(t.usuarioId, t.leida),
+]);
 
 // Relaciones
 export const almacenesRelations = relations(almacenes, ({ many }) => ({

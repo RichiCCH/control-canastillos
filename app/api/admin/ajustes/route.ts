@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { db } from '@/db';
 import { movimientos, movimientosDetalle, inventario, productos, almacenes } from '@/db/schema';
-import { eq, desc, sql, and, or, isNull } from 'drizzle-orm';
+import { eq, desc, sql, and, or, inArray } from 'drizzle-orm';
 import { requirePermission, unauthorizedResponse, forbiddenResponse } from '@/lib/auth';
 import { auth } from '@/lib/auth-config';
 
@@ -36,46 +36,46 @@ export async function GET(request: NextRequest) {
       )
       .orderBy(desc(movimientos.createdAt));
 
-    // Obtener detalles y datos relacionados para cada ajuste
-    const ajustesConDetalles = await Promise.all(
-      ajustes.map(async (ajuste) => {
-        // Obtener detalles de productos
-        const detalles = await db
-          .select({
-            id: movimientosDetalle.id,
-            productoId: movimientosDetalle.productoId,
-            cantidad: movimientosDetalle.cantidad,
-            nombreProducto: productos.nombre,
-            codigoProducto: productos.codigo,
-            tipoProducto: productos.tipo,
-          })
-          .from(movimientosDetalle)
-          .innerJoin(productos, eq(movimientosDetalle.productoId, productos.id))
-          .where(eq(movimientosDetalle.movimientoId, ajuste.id));
+    if (ajustes.length === 0) return NextResponse.json([]);
 
-        // Obtener nombre del almacén
-        let almacenNombre = null;
-        const almacenId = ajuste.tipoMovimiento === 'entrada'
-          ? ajuste.almacenDestinoId
-          : ajuste.almacenOrigenId;
+    const ajusteIds = ajustes.map(a => a.id);
 
-        if (almacenId) {
-          const almacen = await db
-            .select({ nombre: almacenes.nombre })
-            .from(almacenes)
-            .where(eq(almacenes.id, almacenId))
-            .limit(1);
-          almacenNombre = almacen[0]?.nombre || null;
-        }
+    // Batch fetch: all detalles + all almacenes in parallel
+    const [detallesRows, allAlmacenes] = await Promise.all([
+      db.select({
+          movimientoId: movimientosDetalle.movimientoId,
+          id: movimientosDetalle.id,
+          productoId: movimientosDetalle.productoId,
+          cantidad: movimientosDetalle.cantidad,
+          nombreProducto: productos.nombre,
+          codigoProducto: productos.codigo,
+          tipoProducto: productos.tipo,
+        })
+        .from(movimientosDetalle)
+        .innerJoin(productos, eq(movimientosDetalle.productoId, productos.id))
+        .where(inArray(movimientosDetalle.movimientoId, ajusteIds)),
+      db.select({ id: almacenes.id, nombre: almacenes.nombre }).from(almacenes),
+    ]);
 
-        return {
-          ...ajuste,
-          almacenId,
-          almacenNombre,
-          detalles,
-        };
-      })
-    );
+    // Build lookup maps
+    const detallesPorAjuste = new Map<number, typeof detallesRows>();
+    for (const d of detallesRows) {
+      if (!detallesPorAjuste.has(d.movimientoId!)) detallesPorAjuste.set(d.movimientoId!, []);
+      detallesPorAjuste.get(d.movimientoId!)!.push(d);
+    }
+    const almacenMap = new Map(allAlmacenes.map(a => [a.id, a.nombre]));
+
+    const ajustesConDetalles = ajustes.map(ajuste => {
+      const almacenId = ajuste.tipoMovimiento === 'entrada'
+        ? ajuste.almacenDestinoId
+        : ajuste.almacenOrigenId;
+      return {
+        ...ajuste,
+        almacenId,
+        almacenNombre: almacenId ? (almacenMap.get(almacenId) || null) : null,
+        detalles: detallesPorAjuste.get(ajuste.id) || [],
+      };
+    });
 
     return NextResponse.json(ajustesConDetalles);
   } catch (error) {
@@ -151,7 +151,7 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    // Validar que todas las cantidades sean válidas
+    // Validar cantidades
     for (const prod of productosAjuste) {
       if (!prod.productoId || !prod.cantidad || prod.cantidad <= 0) {
         return NextResponse.json(
@@ -159,33 +159,31 @@ export async function POST(request: NextRequest) {
           { status: 400 }
         );
       }
+    }
 
-      // Si es baja, verificar que hay suficiente stock
-      if (tipoMovimiento === 'baja') {
-        const stockActual = await db
-          .select({ cantidad: inventario.cantidad })
-          .from(inventario)
-          .where(
-            and(
-              eq(inventario.almacenId, almacenId),
-              eq(inventario.productoId, prod.productoId)
-            )
-          )
-          .limit(1);
+    const productoIds: number[] = productosAjuste.map((p: { productoId: number }) => p.productoId);
 
-        const cantidadDisponible = stockActual[0]?.cantidad || 0;
+    // Batch fetch inventory for all products at once
+    const inventarioActual = await db
+      .select({ productoId: inventario.productoId, cantidad: inventario.cantidad })
+      .from(inventario)
+      .where(and(eq(inventario.almacenId, almacenId), inArray(inventario.productoId, productoIds)));
+    const stockMap = new Map(inventarioActual.map(i => [i.productoId, i.cantidad]));
 
+    // Validate stock for bajas
+    if (tipoMovimiento === 'baja') {
+      // Batch fetch product names for error messages
+      const productosData = await db
+        .select({ id: productos.id, nombre: productos.nombre })
+        .from(productos)
+        .where(inArray(productos.id, productoIds));
+      const productoNombreMap = new Map(productosData.map(p => [p.id, p.nombre]));
+
+      for (const prod of productosAjuste) {
+        const cantidadDisponible = stockMap.get(prod.productoId) || 0;
         if (cantidadDisponible < prod.cantidad) {
-          const producto = await db
-            .select({ nombre: productos.nombre })
-            .from(productos)
-            .where(eq(productos.id, prod.productoId))
-            .limit(1);
-
           return NextResponse.json(
-            {
-              error: `Stock insuficiente de ${producto[0]?.nombre}. Disponible: ${cantidadDisponible}, Solicitado: ${prod.cantidad}`,
-            },
+            { error: `Stock insuficiente de ${productoNombreMap.get(prod.productoId) || 'producto'}. Disponible: ${cantidadDisponible}, Solicitado: ${prod.cantidad}` },
             { status: 400 }
           );
         }
@@ -212,60 +210,32 @@ export async function POST(request: NextRequest) {
 
     const movimientoId = nuevoMovimiento[0].id;
 
-    // Crear detalles de movimiento
-    for (const prod of productosAjuste) {
-      await db.insert(movimientosDetalle).values({
+    // Batch insert detalles
+    await db.insert(movimientosDetalle).values(
+      productosAjuste.map((prod: { productoId: number; cantidad: number }) => ({
         movimientoId,
         productoId: prod.productoId,
         cantidad: prod.cantidad,
         precioUnitario: null,
-      });
-    }
+      }))
+    );
 
-    // Actualizar inventario
-    for (const prod of productosAjuste) {
-      // Verificar si existe registro de inventario
-      const existingInventario = await db
-        .select()
-        .from(inventario)
-        .where(
-          and(
-            eq(inventario.almacenId, almacenId),
-            eq(inventario.productoId, prod.productoId)
-          )
-        )
-        .limit(1);
-
-      const cantidadCambio = tipoMovimiento === 'entrada'
-        ? prod.cantidad
-        : -prod.cantidad;
-
-      if (existingInventario.length > 0) {
-        // Actualizar registro existente
-        await db
-          .update(inventario)
-          .set({
-            cantidad: sql`${inventario.cantidad} + ${cantidadCambio}`,
-            updatedAt: new Date(),
-          })
-          .where(
-            and(
-              eq(inventario.almacenId, almacenId),
-              eq(inventario.productoId, prod.productoId)
-            )
-          );
-      } else {
-        // Crear nuevo registro (solo para entradas)
-        if (tipoMovimiento === 'entrada') {
-          await db.insert(inventario).values({
-            almacenId,
-            productoId: prod.productoId,
-            cantidad: prod.cantidad,
-            updatedAt: new Date(),
-          });
+    // Parallel inventory updates (stockMap already fetched above)
+    const now = new Date();
+    await Promise.all(
+      productosAjuste.map(async (prod: { productoId: number; cantidad: number }) => {
+        const cantidadCambio = tipoMovimiento === 'entrada' ? prod.cantidad : -prod.cantidad;
+        const existeStock = stockMap.has(prod.productoId);
+        if (existeStock) {
+          await db
+            .update(inventario)
+            .set({ cantidad: sql`${inventario.cantidad} + ${cantidadCambio}`, updatedAt: now })
+            .where(and(eq(inventario.almacenId, almacenId), eq(inventario.productoId, prod.productoId)));
+        } else if (tipoMovimiento === 'entrada') {
+          await db.insert(inventario).values({ almacenId, productoId: prod.productoId, cantidad: prod.cantidad, updatedAt: now });
         }
-      }
-    }
+      })
+    );
 
     return NextResponse.json({
       success: true,

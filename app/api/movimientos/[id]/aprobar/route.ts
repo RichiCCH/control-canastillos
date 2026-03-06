@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { db } from '@/db';
 import { movimientos, movimientosDetalle, inventario, almacenes, users } from '@/db/schema';
-import { eq, and } from 'drizzle-orm';
+import { eq, and, inArray } from 'drizzle-orm';
 import { requirePermission, unauthorizedResponse, forbiddenResponse } from '@/lib/auth';
 import { crearNotificacionMovimientoAprobado } from '@/lib/notifications';
 
@@ -52,74 +52,49 @@ export async function POST(
       })
       .where(eq(movimientos.id, parseInt(id)));
 
-    // Obtener los detalles del movimiento
-    const detalles = await db
-      .select()
-      .from(movimientosDetalle)
-      .where(eq(movimientosDetalle.movimientoId, parseInt(id)));
+    // Obtener detalles + inventario destino en paralelo
+    const almacenDestinoId = movimiento[0].almacenDestinoId;
+    const [detalles, inventarioDestino, notifData] = await Promise.all([
+      db.select().from(movimientosDetalle).where(eq(movimientosDetalle.movimientoId, parseInt(id))),
+      almacenDestinoId
+        ? db.select({ productoId: inventario.productoId, cantidad: inventario.cantidad })
+            .from(inventario)
+            .where(eq(inventario.almacenId, almacenDestinoId))
+        : Promise.resolve([]),
+      almacenDestinoId
+        ? Promise.all([
+            db.select({ nombre: almacenes.nombre }).from(almacenes).where(eq(almacenes.id, almacenDestinoId)).limit(1),
+            db.select({ nombre: users.nombre }).from(users).where(eq(users.id, finalUsuarioAprobadorId)).limit(1),
+          ])
+        : Promise.resolve([[], []] as [{ nombre: string }[], { nombre: string }[]]),
+    ]);
 
     // Agregar productos al inventario del almacén destino
-    if (movimiento[0].almacenDestinoId !== null) {
-      for (const detalle of detalles) {
-        // Verificar si ya existe inventario para este producto en el almacén destino
-        const inventarioExistente = await db
-          .select()
-          .from(inventario)
-          .where(
-            and(
-              eq(inventario.productoId, detalle.productoId),
-              eq(inventario.almacenId, movimiento[0].almacenDestinoId)
-            )
-          )
-          .limit(1);
-
-      if (inventarioExistente.length > 0) {
-        // Actualizar inventario existente
-        await db
-          .update(inventario)
-          .set({
-            cantidad: inventarioExistente[0].cantidad + detalle.cantidad,
-            updatedAt: new Date(),
-          })
-          .where(
-            and(
-              eq(inventario.productoId, detalle.productoId),
-              eq(inventario.almacenId, movimiento[0].almacenDestinoId)
-            )
-          );
-        } else {
-          // Crear nuevo registro de inventario
-          await db
-            .insert(inventario)
-            .values({
-              productoId: detalle.productoId,
-              almacenId: movimiento[0].almacenDestinoId,
-              cantidad: detalle.cantidad,
-            });
-        }
-      }
+    if (almacenDestinoId !== null) {
+      const invMap = new Map((inventarioDestino as { productoId: number; cantidad: number }[]).map(i => [i.productoId, i.cantidad]));
+      const now = new Date();
+      await Promise.all(
+        detalles.map(async (detalle) => {
+          if (invMap.has(detalle.productoId)) {
+            await db.update(inventario)
+              .set({ cantidad: invMap.get(detalle.productoId)! + detalle.cantidad, updatedAt: now })
+              .where(and(eq(inventario.productoId, detalle.productoId), eq(inventario.almacenId, almacenDestinoId)));
+          } else {
+            await db.insert(inventario).values({ productoId: detalle.productoId, almacenId: almacenDestinoId, cantidad: detalle.cantidad });
+          }
+        })
+      );
     }
 
     // Crear notificación para el usuario solicitante
-    if (movimiento[0].almacenDestinoId !== null) {
-      const almacenDestino = await db
-        .select()
-        .from(almacenes)
-        .where(eq(almacenes.id, movimiento[0].almacenDestinoId))
-        .limit(1);
-
-      const usuarioAprobador = await db
-        .select()
-        .from(users)
-        .where(eq(users.id, finalUsuarioAprobadorId))
-        .limit(1);
-
-      if (movimiento[0].usuarioSolicitanteId && usuarioAprobador.length > 0 && almacenDestino.length > 0) {
+    if (almacenDestinoId !== null) {
+      const [almacenDestinoRows, usuarioAprobadorRows] = notifData as [{ nombre: string }[], { nombre: string }[]];
+      if (movimiento[0].usuarioSolicitanteId && usuarioAprobadorRows.length > 0 && almacenDestinoRows.length > 0) {
         await crearNotificacionMovimientoAprobado(
           parseInt(id),
           movimiento[0].usuarioSolicitanteId,
-          almacenDestino[0].nombre,
-          usuarioAprobador[0].nombre
+          almacenDestinoRows[0].nombre,
+          usuarioAprobadorRows[0].nombre
         );
       }
     }

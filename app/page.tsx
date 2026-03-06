@@ -11,10 +11,14 @@ import { Package, Boxes, Warehouse, Inbox, ArrowUpFromLine, Clock, ChevronRight 
 interface AdminStats {
   role: 'admin'; totalProductos: number; totalInventario: number; almacenes: number; movimientosPendientes: number;
 }
+interface EncargadoStats {
+  role: 'encargado'; almacenesCount: number; movimientosPendientes: number; productosEnStock: number; pendingSent: number; pendingReceptions: number;
+}
 interface OperatorStats {
   role: 'operator'; pendingReceptions: number; productosEnStock: number; pendingSent: number;
 }
-type Stats = AdminStats | OperatorStats;
+type Stats = AdminStats | EncargadoStats | OperatorStats;
+
 
 interface Movement {
   id: number;
@@ -34,27 +38,43 @@ const TIPO_EMOJI: Record<string, string> = {
 
 export default function Home() {
   const router = useRouter();
-  const { data: session, status } = useSession();
+  const { data: session, status, update } = useSession();
   const [stats, setStats] = useState<Stats | null>(null);
   const [movements, setMovements] = useState<Movement[]>([]);
   const [loading, setLoading] = useState(true);
   const [showModalSalida, setShowModalSalida] = useState(false);
   const [showModalRecepciones, setShowModalRecepciones] = useState(false);
 
+  // Forzar refresh del JWT al montar para cargar rol y almacenes actualizados
+  useEffect(() => { update(); }, []);
+
   const fetchStats = async () => {
     try {
       const rol = (session?.user as any)?.rol || 'operador';
       const aid = (session?.user as any)?.almacenId;
-      const sUrl = rol === 'admin' ? '/api/stats' : `/api/stats?almacenId=${aid}`;
-      // Historial devuelve todos los movimientos ordenados por fecha desc (no solo pendientes)
-      const mUrl = aid ? `/api/historial?almacenId=${aid}` : null;
+      const almacenes: { id: number }[] = (session?.user as any)?.almacenes || [];
+
+      let sUrl: string;
+      let mUrl: string | null = null;
+
+      if (rol === 'admin') {
+        sUrl = '/api/stats';
+      } else if (rol === 'encargado' && almacenes.length > 0) {
+        // Encargado: pasar lista de todos sus almacenes
+        const ids = almacenes.map(a => a.id).join(',');
+        sUrl = `/api/stats?almacenes=${ids}`;
+        mUrl = `/api/historial?almacenes=${ids}`;
+      } else {
+        sUrl = aid ? `/api/stats?almacenId=${aid}` : '/api/stats';
+        mUrl = aid ? `/api/historial?almacenId=${aid}` : null;
+      }
+
       const fetches: Promise<Response>[] = [fetch(sUrl)];
       if (mUrl) fetches.push(fetch(mUrl));
       const [sr, mr] = await Promise.all(fetches);
       if (sr.ok) setStats(await sr.json());
       if (mr && mr.ok) {
         const all = await mr.json();
-        // ordenar del más reciente y tomar los primeros 5
         setMovements(
           (Array.isArray(all) ? all : [])
             .sort((a: any, b: any) =>
@@ -82,6 +102,7 @@ export default function Home() {
   }, []);
 
   const isAdmin = stats?.role === 'admin';
+  const isEncargado = stats?.role === 'encargado';
   const almacenNombre = (session?.user as any)?.almacenNombre || '';
 
   const kpis = isAdmin ? [
@@ -89,10 +110,16 @@ export default function Home() {
     { label: 'Unidades', value: (stats as AdminStats)?.totalInventario, iconClass: 'kpi-icon-green', icon: Boxes },
     { label: 'Almacenes', value: (stats as AdminStats)?.almacenes, iconClass: 'kpi-icon-amber', icon: Warehouse },
     { label: 'Pendientes', value: (stats as AdminStats)?.movimientosPendientes, iconClass: 'kpi-icon-red', icon: Inbox },
+  ] : isEncargado ? [
+    { label: 'Mis Almacenes', value: (stats as any)?.almacenesCount, iconClass: 'kpi-icon-amber', icon: Warehouse },
+    { label: 'Pendientes', value: (stats as any)?.movimientosPendientes, iconClass: 'kpi-icon-red', icon: Inbox },
+    { label: 'En stock', value: (stats as any)?.productosEnStock, iconClass: 'kpi-icon-green', icon: Boxes },
+    { label: 'Enviadas', value: (stats as any)?.pendingSent, iconClass: 'kpi-icon-blue', icon: ArrowUpFromLine },
   ] : [
     { label: 'Recepciones', value: (stats as OperatorStats)?.pendingReceptions, iconClass: 'kpi-icon-red', icon: Inbox },
     { label: 'En stock', value: (stats as OperatorStats)?.productosEnStock, iconClass: 'kpi-icon-green', icon: Boxes },
     { label: 'Enviadas', value: (stats as OperatorStats)?.pendingSent, iconClass: 'kpi-icon-blue', icon: ArrowUpFromLine },
+
   ];
 
   const formatDate = (iso: string) => {

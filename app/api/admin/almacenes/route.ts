@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { db } from '@/db';
 import { almacenes, users } from '@/db/schema';
-import { eq, and, sql } from 'drizzle-orm';
+import { eq, sql } from 'drizzle-orm';
 import { requirePermission, unauthorizedResponse, forbiddenResponse } from '@/lib/auth';
 
 // GET - Obtener todos los almacenes con información de usuarios asignados
@@ -10,7 +10,8 @@ export async function GET(request: NextRequest) {
     // Require admin permission to view almacenes
     await requirePermission(request, 'admin.almacenes.view');
 
-    const allAlmacenes = await db
+    // Single query with LEFT JOIN + GROUP BY to count users per almacén
+    const almacenesWithUserCount = await db
       .select({
         id: almacenes.id,
         nombre: almacenes.nombre,
@@ -18,23 +19,11 @@ export async function GET(request: NextRequest) {
         descripcion: almacenes.descripcion,
         activo: almacenes.activo,
         createdAt: almacenes.createdAt,
+        usuariosAsignados: sql<number>`count(${users.id})::int`,
       })
-      .from(almacenes);
-
-    // Obtener conteo de usuarios asignados a cada almacén
-    const almacenesWithUserCount = await Promise.all(
-      allAlmacenes.map(async (almacen) => {
-        const userCount = await db
-          .select({ count: sql<number>`count(*)::int` })
-          .from(users)
-          .where(eq(users.almacenId, almacen.id));
-
-        return {
-          ...almacen,
-          usuariosAsignados: userCount[0]?.count || 0,
-        };
-      })
-    );
+      .from(almacenes)
+      .leftJoin(users, eq(users.almacenId, almacenes.id))
+      .groupBy(almacenes.id, almacenes.nombre, almacenes.ubicacion, almacenes.descripcion, almacenes.activo, almacenes.createdAt);
 
     return NextResponse.json(almacenesWithUserCount);
   } catch (error) {

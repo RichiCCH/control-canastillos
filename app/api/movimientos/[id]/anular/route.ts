@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { db } from '@/db';
 import { movimientos, movimientosDetalle, inventario, almacenes, users } from '@/db/schema';
-import { eq, and } from 'drizzle-orm';
+import { eq, and, inArray } from 'drizzle-orm';
 import { requirePermission, unauthorizedResponse, forbiddenResponse } from '@/lib/auth';
 import { crearNotificacion } from '@/lib/notifications';
 
@@ -48,41 +48,41 @@ export async function POST(
       );
     }
 
+    const almacenOrigenId = movimiento[0].almacenOrigenId;
+    const almacenDestinoId = movimiento[0].almacenDestinoId;
+    const esPendiente = movimiento[0].estado === 'pendiente';
+
+    // Parallel: fetch detalles (if needed) + notification data + update movimiento
+    const [detalles, notifData] = await Promise.all([
+      esPendiente && almacenOrigenId !== null
+        ? db.select().from(movimientosDetalle).where(eq(movimientosDetalle.movimientoId, parseInt(id)))
+        : Promise.resolve([]),
+      movimiento[0].usuarioAprobadorId && almacenDestinoId !== null
+        ? Promise.all([
+            db.select({ nombre: almacenes.nombre }).from(almacenes).where(eq(almacenes.id, almacenDestinoId)).limit(1),
+            db.select({ nombre: users.nombre }).from(users).where(eq(users.id, authUser.id)).limit(1),
+          ])
+        : Promise.resolve([[], []] as [{ nombre: string }[], { nombre: string }[]]),
+    ]);
+
     // Si el movimiento está pendiente, devolver productos al inventario del almacén de origen
-    if (movimiento[0].estado === 'pendiente' && movimiento[0].almacenOrigenId !== null) {
-      const detalles = await db
-        .select()
-        .from(movimientosDetalle)
-        .where(eq(movimientosDetalle.movimientoId, parseInt(id)));
-
-      for (const detalle of detalles) {
-        const inventarioActual = await db
-          .select()
-          .from(inventario)
-          .where(
-            and(
-              eq(inventario.productoId, detalle.productoId),
-              eq(inventario.almacenId, movimiento[0].almacenOrigenId)
-            )
+    if (esPendiente && almacenOrigenId !== null && detalles.length > 0) {
+      const prodIds = detalles.map(d => d.productoId);
+      const inventarioOrigen = await db
+        .select({ productoId: inventario.productoId, cantidad: inventario.cantidad })
+        .from(inventario)
+        .where(and(eq(inventario.almacenId, almacenOrigenId), inArray(inventario.productoId, prodIds)));
+      const invMap = new Map(inventarioOrigen.map(i => [i.productoId, i.cantidad]));
+      const now = new Date();
+      await Promise.all(
+        detalles
+          .filter(d => invMap.has(d.productoId))
+          .map(detalle =>
+            db.update(inventario)
+              .set({ cantidad: invMap.get(detalle.productoId)! + detalle.cantidad, updatedAt: now })
+              .where(and(eq(inventario.productoId, detalle.productoId), eq(inventario.almacenId, almacenOrigenId)))
           )
-          .limit(1);
-
-        if (inventarioActual.length > 0) {
-          // Restaurar inventario en almacén de origen
-          await db
-            .update(inventario)
-            .set({
-              cantidad: inventarioActual[0].cantidad + detalle.cantidad,
-              updatedAt: new Date(),
-            })
-            .where(
-              and(
-                eq(inventario.productoId, detalle.productoId),
-                eq(inventario.almacenId, movimiento[0].almacenOrigenId)
-              )
-            );
-        }
-      }
+      );
     }
 
     // Anular el movimiento
@@ -95,26 +95,15 @@ export async function POST(
       .where(eq(movimientos.id, parseInt(id)));
 
     // Crear notificación para el aprobador si existe
-    if (movimiento[0].usuarioAprobadorId && movimiento[0].almacenDestinoId !== null) {
-      const almacenDestino = await db
-        .select()
-        .from(almacenes)
-        .where(eq(almacenes.id, movimiento[0].almacenDestinoId))
-        .limit(1);
-
-      const usuarioSolicitante = await db
-        .select()
-        .from(users)
-        .where(eq(users.id, authUser.id))
-        .limit(1);
-
-      if (usuarioSolicitante.length > 0 && almacenDestino.length > 0) {
+    if (movimiento[0].usuarioAprobadorId && almacenDestinoId !== null) {
+      const [almacenDestinoRows, usuarioSolicitanteRows] = notifData as [{ nombre: string }[], { nombre: string }[]];
+      if (usuarioSolicitanteRows.length > 0 && almacenDestinoRows.length > 0) {
         await crearNotificacion(
           movimiento[0].usuarioAprobadorId,
           parseInt(id),
           'movimiento_anulado',
           'Movimiento anulado',
-          `${usuarioSolicitante[0].nombre} ha anulado el movimiento #${id} hacia ${almacenDestino[0].nombre}${observaciones ? `. Motivo: ${observaciones}` : ''}`
+          `${usuarioSolicitanteRows[0].nombre} ha anulado el movimiento #${id} hacia ${almacenDestinoRows[0].nombre}${observaciones ? `. Motivo: ${observaciones}` : ''}`
         );
       }
     }

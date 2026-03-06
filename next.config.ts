@@ -1,6 +1,9 @@
 import type { NextConfig } from "next";
 
 const nextConfig: NextConfig = {
+  // Salida independiente y minimizada (ideal para Azure/Docker)
+  output: 'standalone',
+
   // Compilación más rápida (quita logs en producción)
   compiler: {
     removeConsole: process.env.NODE_ENV === 'production' ? { exclude: ['error'] } : false,

@@ -1,12 +1,16 @@
 'use client';
 
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useMemo } from 'react';
 import Navigation from '@/components/navigation';
 import { useSession } from 'next-auth/react';
+import { Warehouse, Search } from 'lucide-react';
+import AlmacenMultiSelect from '@/components/almacen-multi-select';
 
 interface Almacen { id: number; nombre: string; ubicacion: string | null; }
 interface InventarioItem {
   id: number; cantidad: number;
+  almacenId?: number;
+  almacenNombre?: string;
   producto: { id: number; codigo: string; nombre: string; tipo: string; unidadMedida: string; };
 }
 
@@ -19,184 +23,238 @@ const STOCK_MAX: Record<string, number> = {
 };
 
 export default function InventarioPage() {
-  const { data: session } = useSession();
+  const { data: session, update } = useSession();
+
   const [almacenes, setAlmacenes] = useState<Almacen[]>([]);
-  const [almacenSeleccionado, setAlmacenSeleccionado] = useState('');
+  const [fAlmacenes, setFAlmacenes] = useState<number[]>([]); // [] = todos
   const [estadoFiltro, setEstadoFiltro] = useState('todos');
   const [busqueda, setBusqueda] = useState('');
   const [inventario, setInventario] = useState<InventarioItem[]>([]);
   const [loading, setLoading] = useState(false);
 
-  // Almacenes que el usuario tiene asignados (vacío = admin, ve todos)
-  const almacenesUsuario: { id: number; nombre: string; esPrincipal: boolean }[] =
-    (session?.user as any)?.almacenes || [];
+  const rol = (session?.user as any)?.rol || 'operador';
+  const isAdmin = rol === 'admin';
 
+  // Almacenes asignados al usuario — con fallback a almacenId si el JWT aún no tiene la lista
+  const almacenIdSesion = (session?.user as any)?.almacenId as number | null;
+  const almacenNombreSesion = (session?.user as any)?.almacenNombre as string | null;
+  const almacenesUsuarioRaw: { id: number; nombre: string; esPrincipal: boolean }[] =
+    (session?.user as any)?.almacenes || [];
+  const almacenesUsuario = almacenesUsuarioRaw.length > 0
+    ? almacenesUsuarioRaw
+    : (almacenIdSesion ? [{ id: almacenIdSesion, nombre: almacenNombreSesion || '', esPrincipal: true }] : []);
+
+  // Forzar refresh del JWT al montar
+  useEffect(() => { update(); }, []);
+
+  // Cargar lista de almacenes disponibles
   useEffect(() => {
-    fetchAlmacenes();
+    fetch('/api/almacenes')
+      .then(r => r.json())
+      .then(data => setAlmacenes(Array.isArray(data) ? data : []))
+      .catch(() => { });
   }, []);
 
-  // Pre-seleccionar almacén al cargar la sesión y los almacenes
-  useEffect(() => {
-    if (almacenes.length === 0) return;
-    const lista = almacenesUsuario.length > 0
-      ? almacenes.filter(a => almacenesUsuario.some(u => u.id === a.id))
-      : almacenes; // admin ve todos
-    if (lista.length === 0) return;
-    // Pre-seleccionar el principal, o el único si solo hay uno
-    const principal = almacenesUsuario.find(u => u.esPrincipal);
-    const preselect = principal
-      ? String(principal.id)
-      : String(lista[0].id);
-    setAlmacenSeleccionado(preselect);
-  }, [session, almacenes]);
+  // Lista de almacenes que el usuario puede ver
+  const listaAlmacenes = useMemo(() => {
+    if (isAdmin) return almacenes;
+    if (almacenesUsuario.length > 0) {
+      return almacenes.filter(a => almacenesUsuario.some(u => u.id === a.id));
+    }
+    const aid = (session?.user as any)?.almacenId;
+    return almacenes.filter(a => a.id === aid);
+  }, [almacenes, almacenesUsuario, isAdmin, session]);
 
+  // Cargar inventario cuando cambia la selección de almacenes
   useEffect(() => {
-    if (almacenSeleccionado) fetchInventario(parseInt(almacenSeleccionado));
-  }, [almacenSeleccionado]);
+    if (listaAlmacenes.length === 0) return;
+    loadInventario();
+  }, [fAlmacenes, listaAlmacenes]);
 
-  const fetchAlmacenes = async () => {
-    try { const r = await fetch('/api/almacenes'); setAlmacenes(await r.json()); } catch { }
-  };
-  const fetchInventario = async (id: number) => {
+  const loadInventario = async () => {
     setLoading(true);
-    try { const r = await fetch(`/api/inventario?almacenId=${id}`); setInventario(await r.json()); } catch { } finally { setLoading(false); }
+    try {
+      // targets = almacenes seleccionados, o todos si ninguno seleccionado
+      const targets = fAlmacenes.length > 0
+        ? listaAlmacenes.filter(a => fAlmacenes.includes(a.id))
+        : listaAlmacenes;
+
+      const results = await Promise.all(
+        targets.map(a =>
+          fetch(`/api/inventario?almacenId=${a.id}`)
+            .then(r => r.json())
+            .then((items: InventarioItem[]) =>
+              items.map(item => ({ ...item, almacenId: a.id, almacenNombre: a.nombre }))
+            )
+        )
+      );
+      setInventario(results.flat());
+    } catch {
+    } finally {
+      setLoading(false);
+    }
   };
 
-  const inventarioFiltrado = inventario.filter(item => {
-    if (estadoFiltro === 'con_stock' && item.cantidad === 0) return false;
-    if (estadoFiltro === 'sin_stock' && item.cantidad > 0) return false;
+  // Filtrado por búsqueda y stock
+  const inventarioFiltrado = useMemo(() => {
+    let items = [...inventario];
+    if (estadoFiltro === 'con_stock') items = items.filter(i => i.cantidad > 0);
+    if (estadoFiltro === 'sin_stock') items = items.filter(i => i.cantidad === 0);
     if (busqueda.trim()) {
       const q = busqueda.toLowerCase();
-      return item.producto.nombre.toLowerCase().includes(q) || item.producto.codigo.toLowerCase().includes(q);
+      items = items.filter(i =>
+        i.producto.nombre.toLowerCase().includes(q) ||
+        i.producto.codigo.toLowerCase().includes(q) ||
+        i.almacenNombre?.toLowerCase().includes(q)
+      );
     }
-    return true;
-  });
+    return items;
+  }, [inventario, estadoFiltro, busqueda]);
+
+  const mostrarColumnaAlmacen = listaAlmacenes.length > 1;
+  const totalUnidades = inventarioFiltrado.reduce((s, i) => s + i.cantidad, 0);
 
   return (
-    <div className="min-h-screen" style={{ background: 'var(--bg)' }}>
+    <div className="min-h-screen bg-background">
       <Navigation />
       <div className="main-content">
-        <div className="max-w-5xl mx-auto px-4 sm:px-6 lg:px-8 pt-6 lg:pt-8 space-y-6">
+        <div className="max-w-6xl mx-auto px-4 sm:px-6 lg:px-8 pt-6 lg:pt-8 space-y-5 pb-8">
 
-          {/* Header */}
-          <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
+          {/* ── Header ── */}
+          <div className="flex items-start justify-between gap-3 flex-wrap">
             <div>
               <h1 className="text-2xl font-bold lg:text-3xl text-gray-900">Inventario</h1>
-              <p className="text-sm mt-1" style={{ color: 'var(--text-3)' }}>Stock disponible por almacén</p>
+              <p className="text-sm mt-1 text-muted-foreground">
+                {inventarioFiltrado.length} producto{inventarioFiltrado.length !== 1 ? 's' : ''}
+                {mostrarColumnaAlmacen && ` · ${fAlmacenes.length > 0 ? fAlmacenes.length : listaAlmacenes.length} almacén${(fAlmacenes.length || listaAlmacenes.length) !== 1 ? 'es' : ''}`}
+                {' · '}<span className="font-semibold text-blue-600">{totalUnidades.toLocaleString()} unidades</span>
+              </p>
             </div>
-            {/* Solo mostrar selector si hay más de 1 almacén disponible */}
-            {(() => {
-              const lista = almacenesUsuario.length > 0
-                ? almacenes.filter(a => almacenesUsuario.some(u => u.id === a.id))
-                : almacenes;
-              if (lista.length <= 1) return null;
-              return (
-                <select
-                  value={almacenSeleccionado}
-                  onChange={e => { setAlmacenSeleccionado(e.target.value); setBusqueda(''); }}
-                  className="input-field sm:w-52"
-                >
-                  {lista.map(a => (
-                    <option key={a.id} value={a.id}>{a.nombre}</option>
-                  ))}
-                </select>
-              );
-            })()}
           </div>
 
-          {/* Filters */}
-          {almacenSeleccionado && (
-            <div className="card-elevated p-4 flex flex-col sm:flex-row gap-3">
-              <div className="relative flex-1">
-                <svg className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4" style={{ color: 'var(--text-4)' }} fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z" />
-                </svg>
-                <input
-                  type="text"
-                  value={busqueda}
-                  onChange={e => setBusqueda(e.target.value)}
-                  placeholder="Buscar por nombre o código..."
-                  className="input-field pl-9"
-                />
-              </div>
+          {/* ── Barra de búsqueda + filtros ── */}
+          <div className="card-elevated p-3 flex flex-col sm:flex-row gap-3 items-end">
+            {/* Búsqueda */}
+            <div className="relative flex-1">
+              <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400" />
+              <input
+                type="text"
+                value={busqueda}
+                onChange={e => setBusqueda(e.target.value)}
+                placeholder="Buscar por nombre, código o almacén..."
+                className="input-field pl-9"
+              />
+            </div>
+
+            {/* Multi-select almacén (solo si hay más de uno disponible) */}
+            {listaAlmacenes.length > 1 && (
+              <AlmacenMultiSelect
+                almacenes={listaAlmacenes}
+                selected={fAlmacenes}
+                onChange={setFAlmacenes}
+              />
+            )}
+
+            {/* Estado */}
+            <div className="flex-shrink-0">
               <select value={estadoFiltro} onChange={e => setEstadoFiltro(e.target.value)} className="input-field sm:w-44">
-                <option value="todos">Todos</option>
+                <option value="todos">Todos los productos</option>
                 <option value="con_stock">Con stock</option>
                 <option value="sin_stock">Sin stock</option>
               </select>
             </div>
-          )}
+          </div>
 
-          {/* Content */}
-          {loading ? (
-            <div className="card-elevated py-12 flex items-center justify-center gap-3">
-              <div className="animate-spin rounded-full h-8 w-8 border-b-2" style={{ borderColor: 'var(--primary)' }} />
-              <span style={{ color: 'var(--text-3)' }}>Cargando inventario...</span>
-            </div>
-          ) : !almacenSeleccionado ? (
-            <div className="card-elevated py-12 text-center">
-              <svg className="mx-auto h-14 w-14 mb-3" style={{ color: 'var(--text-4)' }} fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M20 7l-8-4-8 4m16 0l-8 4m8-4v10l-8 4m0-10L4 7m8 4v10M4 7v10l8 4" />
-              </svg>
-              <p style={{ color: 'var(--text-3)' }}>Selecciona un almacén para ver su inventario</p>
-            </div>
-          ) : inventario.length === 0 ? (
-            <div className="card-elevated py-12 text-center">
-              <svg className="mx-auto h-14 w-14 mb-3" style={{ color: 'var(--text-4)' }} fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M20 13V6a2 2 0 00-2-2H6a2 2 0 00-2 2v7m16 0v5a2 2 0 01-2 2H6a2 2 0 01-2-2v-5" />
-              </svg>
-              <p style={{ color: 'var(--text-3)' }}>No hay productos en este almacén</p>
-            </div>
-          ) : inventarioFiltrado.length === 0 ? (
-            <div className="card-elevated py-10 text-center">
-              <p style={{ color: 'var(--text-3)' }}>No hay productos que coincidan con los filtros</p>
-            </div>
-          ) : (
-            <div className="grid gap-3 sm:grid-cols-2">
-              {inventarioFiltrado.map(item => {
-                const max = STOCK_MAX[item.producto.tipo] || 500;
-                const pct = Math.min(Math.round((item.cantidad / max) * 100), 100);
-                const emoji = TIPO_EMOJI[item.producto.tipo] || '📦';
-                return (
-                  <div key={item.id} className="card-elevated p-4 space-y-3">
-                    <div className="flex items-center justify-between">
-                      <div className="min-w-0">
-                        <p className="font-medium text-sm text-gray-800 truncate">
-                          {emoji} {item.producto.nombre}
-                        </p>
-                        <p className="text-xs font-mono mt-0.5" style={{ color: 'var(--text-4)' }}>{item.producto.codigo}</p>
-                      </div>
-                      <p className="text-2xl font-bold ml-3 flex-shrink-0 font-sans">
-                        {item.cantidad}
-                      </p>
-                    </div>
-                    <div className="space-y-1">
-                      <div className="w-full bg-gray-100 rounded-full h-2 overflow-hidden">
-                        <div
-                          className="h-2 rounded-full transition-all"
-                          style={{
-                            width: `${pct}%`,
-                            background: pct > 60 ? '#10b981' : pct > 25 ? '#f59e0b' : '#f43f5e',
-                          }}
-                        />
-                      </div>
-                      <div className="flex justify-between items-center">
-                        <span className="text-[10px]" style={{ color: 'var(--text-4)' }}>{item.producto.unidadMedida}</span>
-                        <span className="text-[10px]" style={{ color: 'var(--text-4)' }}>{pct}% de capacidad</span>
-                      </div>
-                    </div>
-                  </div>
-                );
-              })}
-            </div>
-          )}
+          {/* ── Tabla de inventario ── */}
+          <div className="card-elevated overflow-hidden">
+            {loading ? (
+              <div className="py-14 flex items-center justify-center gap-3">
+                <div className="animate-spin rounded-full h-7 w-7 border-b-2 border-blue-600" />
+                <span className="text-muted-foreground text-sm">Cargando inventario...</span>
+              </div>
+            ) : inventarioFiltrado.length === 0 ? (
+              <div className="py-14 text-center">
+                <p className="font-medium text-muted-foreground">No hay productos que coincidan</p>
+                <p className="text-sm text-gray-400 mt-1">Intenta cambiar los filtros</p>
+              </div>
+            ) : (
+              <div className="overflow-x-auto">
+                <table className="w-full text-sm">
+                  <thead>
+                    <tr className="border-b border-gray-100 bg-gray-50/80">
+                      {mostrarColumnaAlmacen && (
+                        <th className="text-left px-4 py-3 text-xs font-semibold uppercase tracking-wide text-purple-500">
+                          <div className="flex items-center gap-1"><Warehouse className="w-3 h-3" /> Almacén</div>
+                        </th>
+                      )}
+                      <th className="text-left px-4 py-3 text-xs font-semibold uppercase tracking-wide text-gray-500">Producto</th>
+                      <th className="text-left px-4 py-3 text-xs font-semibold uppercase tracking-wide text-gray-500">Código</th>
+                      <th className="text-left px-4 py-3 text-xs font-semibold uppercase tracking-wide text-gray-500">Tipo</th>
+                      <th className="text-right px-4 py-3 text-xs font-semibold uppercase tracking-wide text-gray-500">Stock</th>
+                      <th className="text-left px-4 py-3 text-xs font-semibold uppercase tracking-wide text-gray-500 w-40">Nivel</th>
+                    </tr>
+                  </thead>
+                  <tbody className="divide-y divide-gray-50">
+                    {inventarioFiltrado.map((item) => {
+                      const max = STOCK_MAX[item.producto.tipo] || 500;
+                      const pct = Math.min(Math.round((item.cantidad / max) * 100), 100);
+                      const emoji = TIPO_EMOJI[item.producto.tipo] || '📦';
+                      const barColor = item.cantidad === 0 ? '#f43f5e' : pct > 60 ? '#10b981' : '#f59e0b';
+                      return (
+                        <tr key={`${item.almacenId}-${item.id}`}
+                          className="hover:bg-gray-50/60 transition-colors">
+                          {mostrarColumnaAlmacen && (
+                            <td className="px-4 py-3">
+                              <span className="text-xs font-semibold px-2 py-1 rounded-full bg-purple-50 text-purple-700 border border-purple-100 whitespace-nowrap">
+                                {item.almacenNombre}
+                              </span>
+                            </td>
+                          )}
+                          <td className="px-4 py-3">
+                            <p className="font-medium text-gray-800">{emoji} {item.producto.nombre}</p>
+                          </td>
+                          <td className="px-4 py-3">
+                            <span className="text-xs font-mono text-gray-400">{item.producto.codigo}</span>
+                          </td>
+                          <td className="px-4 py-3">
+                            <span className="text-xs text-gray-500 capitalize">{item.producto.tipo.replace('_', ' ')}</span>
+                          </td>
+                          <td className="px-4 py-3 text-right">
+                            <span className={`text-base font-bold ${item.cantidad === 0 ? 'text-red-500' : 'text-gray-800'}`}>
+                              {item.cantidad.toLocaleString()}
+                            </span>
+                            <span className="text-xs text-gray-400 ml-1">{item.producto.unidadMedida}</span>
+                          </td>
+                          <td className="px-4 py-3">
+                            <div className="flex items-center gap-2">
+                              <div className="flex-1 bg-gray-100 rounded-full h-1.5 overflow-hidden">
+                                <div
+                                  className="h-1.5 rounded-full transition-all duration-300"
+                                  style={{ width: `${pct}%`, background: barColor }}
+                                />
+                              </div>
+                              <span className="text-[10px] text-gray-400 w-8 text-right">{pct}%</span>
+                            </div>
+                          </td>
+                        </tr>
+                      );
+                    })}
+                  </tbody>
+                </table>
 
-          {/* Summary */}
-          {inventario.length > 0 && (
-            <p className="text-xs text-center pb-2" style={{ color: 'var(--text-4)' }}>
-              {inventarioFiltrado.length} de {inventario.length} productos · {inventario.reduce((s, i) => s + i.cantidad, 0).toLocaleString()} unidades totales
-            </p>
-          )}
+                {/* Footer de la tabla */}
+                <div className="px-4 py-3 border-t border-gray-100 bg-gray-50/50 flex items-center justify-between">
+                  <p className="text-xs text-gray-400">
+                    {inventarioFiltrado.length} producto{inventarioFiltrado.length !== 1 ? 's' : ''}
+                    {busqueda || estadoFiltro !== 'todos' || fAlmacenes.length > 0 ? ' (filtrado)' : ''}
+                  </p>
+                  <p className="text-xs font-semibold text-gray-600">
+                    Total: <span className="text-blue-600">{totalUnidades.toLocaleString()}</span> unidades
+                  </p>
+                </div>
+              </div>
+            )}
+          </div>
 
         </div>
       </div>

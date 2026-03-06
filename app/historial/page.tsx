@@ -1,15 +1,16 @@
 'use client';
 
-import { useState, useEffect, useMemo } from 'react';
-import { useSession } from 'next-auth/react';
+import React, { useState, useEffect, useMemo } from 'react';
+import { useSession, signIn } from 'next-auth/react';
 import { useRouter } from 'next/navigation';
 import Navigation from '@/components/navigation';
 import * as XLSX from 'xlsx';
 import { generarPDFSalida, generarPDFRecepcion } from '@/lib/utils/pdf';
 import {
   Filter, X, Download, FileText, ArrowUpDown, ArrowUp, ArrowDown,
-  ChevronLeft, ChevronRight, Search,
+  ChevronLeft, ChevronRight, Search, Warehouse,
 } from 'lucide-react';
+import AlmacenMultiSelect from '@/components/almacen-multi-select';
 
 interface Movimiento {
   id: number;
@@ -29,7 +30,7 @@ interface Movimiento {
   }>;
 }
 
-type SortField = 'id' | 'fecha' | 'estado' | 'tipo';
+type SortField = 'id' | 'fecha' | 'estado' | 'tipo' | 'almacen';
 type SortDir = 'asc' | 'desc';
 
 const TIPO_EMOJI: Record<string, string> = {
@@ -45,12 +46,28 @@ const ESTADO_STYLE: Record<string, { bg: string; color: string; label: string }>
 
 export default function HistorialPage() {
   const router = useRouter();
-  const { data: session, status } = useSession();
+  const { data: session, status, update } = useSession();
   const [movimientos, setMovimientos] = useState<Movimiento[]>([]);
   const [loading, setLoading] = useState(true);
   const [showFilters, setShowFilters] = useState(false);
+
+  // Forzar refresh del JWT al montar para cargar rol y almacenes actualizados
+  useEffect(() => { update(); }, []);
   const [page, setPage] = useState(1);
   const PER_PAGE = 15;
+
+  // Datos del usuario
+  const rol = (session?.user as any)?.rol || 'operador';
+  const almacenIdSesion = (session?.user as any)?.almacenId as number | null;
+  const almacenNombreSesion = (session?.user as any)?.almacenNombre as string | null;
+  const almacenesUsuarioRaw: { id: number; nombre: string; esPrincipal: boolean }[] =
+    (session?.user as any)?.almacenes || [];
+  // Si el JWT aún no tiene almacenes cargados pero sí almacenId, usarlo como fallback
+  const almacenesUsuario = almacenesUsuarioRaw.length > 0
+    ? almacenesUsuarioRaw
+    : (almacenIdSesion ? [{ id: almacenIdSesion, nombre: almacenNombreSesion || '', esPrincipal: true }] : []);
+  const isEncargado = rol === 'encargado';
+  const isAdmin = rol === 'admin';
 
   // ── Filtros ──
   const [fEstado, setFEstado] = useState('todos');
@@ -58,6 +75,7 @@ export default function HistorialPage() {
   const [fBusqueda, setFBusqueda] = useState('');
   const [fDesde, setFDesde] = useState('');
   const [fHasta, setFHasta] = useState('');
+  const [fAlmacen, setFAlmacen] = useState<number[]>([]); // [] = todos
 
   // ── Orden ──
   const [sortField, setSortField] = useState<SortField>('fecha');
@@ -69,16 +87,29 @@ export default function HistorialPage() {
   useEffect(() => {
     if (status === 'loading') return;
     if (status === 'unauthenticated') { router.push('/login'); return; }
-    if (session?.user) {
-      const aid = (session.user as any).almacenId;
-      if (aid) fetch(`/api/historial?almacenId=${aid}`)
+    if (!session?.user) return;
+
+    const aid = (session.user as any).almacenId;
+
+    if (isEncargado && almacenesUsuario.length > 0) {
+      // Encargado: pide historial de TODOS sus almacenes asignados
+      const ids = almacenesUsuario.map(a => a.id).join(',');
+      fetch(`/api/historial?almacenes=${ids}`)
         .then(r => r.json())
         .then(data => setMovimientos(Array.isArray(data) ? data : []))
         .catch(() => { })
         .finally(() => setLoading(false));
-      else setLoading(false);
+    } else if (aid) {
+      fetch(`/api/historial?almacenId=${aid}`)
+        .then(r => r.json())
+        .then(data => setMovimientos(Array.isArray(data) ? data : []))
+        .catch(() => { })
+        .finally(() => setLoading(false));
+    } else {
+      setLoading(false);
     }
   }, [session, status, router]);
+
 
   // ── Filtrado ──
   const filtered = useMemo(() => {
@@ -86,6 +117,15 @@ export default function HistorialPage() {
 
     if (fEstado !== 'todos') result = result.filter(m => m.estado === fEstado);
     if (fTipo !== 'todos') result = result.filter(m => m.tipo === fTipo);
+
+    // Filtro por almacén (útil para el encargado con múltiples almacenes)
+    if (fAlmacen.length > 0) {
+      result = result.filter(m =>
+        (m.almacenOrigen?.id !== undefined && fAlmacen.includes(m.almacenOrigen.id)) ||
+        (m.almacenDestino?.id !== undefined && fAlmacen.includes(m.almacenDestino.id))
+      );
+    }
+
     if (fBusqueda.trim()) {
       const q = fBusqueda.trim().toLowerCase();
       result = result.filter(m =>
@@ -112,11 +152,16 @@ export default function HistorialPage() {
       if (sortField === 'fecha') cmp = new Date(a.fechaSolicitud).getTime() - new Date(b.fechaSolicitud).getTime();
       if (sortField === 'estado') cmp = a.estado.localeCompare(b.estado);
       if (sortField === 'tipo') cmp = a.tipo.localeCompare(b.tipo);
+      if (sortField === 'almacen') {
+        const aName = a.almacenOrigen?.nombre || a.almacenDestino?.nombre || '';
+        const bName = b.almacenOrigen?.nombre || b.almacenDestino?.nombre || '';
+        cmp = aName.localeCompare(bName);
+      }
       return sortDir === 'asc' ? cmp : -cmp;
     });
 
     return result;
-  }, [movimientos, fEstado, fTipo, fBusqueda, fDesde, fHasta, sortField, sortDir]);
+  }, [movimientos, fEstado, fTipo, fAlmacen, fBusqueda, fDesde, fHasta, sortField, sortDir]);
 
   const totalPages = Math.ceil(filtered.length / PER_PAGE);
   const paged = filtered.slice((page - 1) * PER_PAGE, page * PER_PAGE);
@@ -135,11 +180,11 @@ export default function HistorialPage() {
   };
 
   const resetFiltros = () => {
-    setFEstado('todos'); setFTipo('todos'); setFBusqueda(''); setFDesde(''); setFHasta('');
+    setFEstado('todos'); setFTipo('todos'); setFBusqueda(''); setFDesde(''); setFHasta(''); setFAlmacen([]);
     setPage(1);
   };
 
-  const activeFilters = [fEstado !== 'todos', fTipo !== 'todos', !!fBusqueda.trim(), !!fDesde, !!fHasta].filter(Boolean).length;
+  const activeFilters = [fEstado !== 'todos', fTipo !== 'todos', fAlmacen.length > 0, !!fBusqueda.trim(), !!fDesde, !!fHasta].filter(Boolean).length;
 
   const formatDate = (s: string) => new Date(s).toLocaleDateString('es-ES', {
     day: '2-digit', month: '2-digit', year: '2-digit', hour: '2-digit', minute: '2-digit',
@@ -158,7 +203,9 @@ export default function HistorialPage() {
     const rows = filtered.flatMap(m =>
       m.detalles.length ? m.detalles.map(d => ({
         'ID': m.id, 'Estado': ESTADO_STYLE[m.estado]?.label || m.estado,
-        'Tipo': m.tipo, 'Origen': m.almacenOrigen?.nombre || '', 'Destino': m.almacenDestino?.nombre || '',
+        'Tipo': m.tipo,
+        'Almacén Origen': m.almacenOrigen?.nombre || '',
+        'Almacén Destino': m.almacenDestino?.nombre || '',
         'Solicitante': m.usuarioSolicitante?.nombre || '', 'Aprobador': m.usuarioAprobador?.nombre || '',
         'Fecha Solicitud': formatDate(m.fechaSolicitud),
         'Fecha Aprobación': m.fechaAprobacion ? formatDate(m.fechaAprobacion) : '',
@@ -205,7 +252,12 @@ export default function HistorialPage() {
             <div>
               <h1 className="text-2xl font-bold lg:text-3xl text-gray-900">Historial de Movimientos</h1>
               <p className="text-sm mt-1 text-muted-foreground">
-                Registro completo · {filtered.length} resultado{filtered.length !== 1 ? 's' : ''}
+                {isEncargado && almacenesUsuario.length > 1 && (
+                  <span className="text-purple-600 font-semibold mr-2">
+                    🏢 {almacenesUsuario.length} almacenes ·
+                  </span>
+                )}
+                {filtered.length} resultado{filtered.length !== 1 ? 's' : ''}
                 {activeFilters > 0 && <span className="ml-1 text-blue-600">(filtrando)</span>}
               </p>
             </div>
@@ -267,7 +319,19 @@ export default function HistorialPage() {
                 />
               </div>
 
-              <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
+              <div className="grid grid-cols-2 sm:grid-cols-5 gap-3">
+                {/* Filtro Almacén: para encargado con múltiples almacenes */}
+                {isEncargado && almacenesUsuario.length > 1 && (
+                  <div className="col-span-2 sm:col-span-1">
+                    <label className="field-label flex items-center gap-1"><Warehouse className="w-3 h-3" /> Almacén</label>
+                    <AlmacenMultiSelect
+                      almacenes={almacenesUsuario}
+                      selected={fAlmacen}
+                      onChange={(ids) => { setFAlmacen(ids); setPage(1); }}
+                      placeholder="Todos los almacenes"
+                    />
+                  </div>
+                )}
                 <div>
                   <label className="field-label">Estado</label>
                   <select value={fEstado} onChange={e => { setFEstado(e.target.value); setPage(1); }} className="input-field">
@@ -339,20 +403,40 @@ export default function HistorialPage() {
                             Estado <SortIcon field="estado" />
                           </button>
                         </th>
-                        <th className="text-left px-4 py-3 font-semibold text-gray-500 text-xs uppercase tracking-wide">Origen → Destino</th>
+                        {/* Columna Almacén visible para encargado */}
+                        {isEncargado && (
+                          <th className="text-left px-4 py-3 font-semibold text-purple-500 text-xs uppercase tracking-wide">
+                            <button onClick={() => toggleSort('almacen')} className="flex items-center gap-1 hover:text-purple-700">
+                              <Warehouse className="w-3 h-3" /> Almacén <SortIcon field="almacen" />
+                            </button>
+                          </th>
+                        )}
+                        <th className="text-left px-4 py-3 font-semibold text-gray-500 text-xs uppercase tracking-wide">
+                          Origen → Destino
+                        </th>
                         <th className="text-left px-4 py-3 font-semibold text-gray-500 text-xs uppercase tracking-wide">Productos</th>
                         <th className="text-left px-4 py-3 font-semibold text-gray-500 text-xs uppercase tracking-wide">Solicitante</th>
                         <th className="px-4 py-3 w-20"></th>
                       </tr>
                     </thead>
                     <tbody>
-                      {paged.map((m, idx) => {
+                      {paged.map((m) => {
                         const es = ESTADO_STYLE[m.estado] || { bg: '#f3f4f6', color: '#374151', label: m.estado };
                         const isExp = expanded === m.id;
+                        // Para encargado: determinar almacén focal y dirección
+                        const esOrigenDelEncargado = isEncargado && almacenesUsuario.some(a => a.id === m.almacenOrigen?.id);
+                        const esDestinoDelEncargado = isEncargado && almacenesUsuario.some(a => a.id === m.almacenDestino?.id);
+                        const almacenFocal = isEncargado
+                          ? (esOrigenDelEncargado ? m.almacenOrigen : m.almacenDestino)
+                          : null;
+                        // dirección desde perspectiva del encargado
+                        const dirEncargado = esOrigenDelEncargado && esDestinoDelEncargado
+                          ? 'interno' // movimiento entre dos almacenes propios
+                          : esOrigenDelEncargado ? 'salida' : 'entrada';
+
                         return (
-                          <>
+                          <React.Fragment key={m.id}>
                             <tr
-                              key={m.id}
                               className={`border-b border-gray-50 cursor-pointer transition-colors ${isExp ? 'bg-blue-50/30' : 'hover:bg-gray-50/60'}`}
                               onClick={() => setExpanded(isExp ? null : m.id)}
                             >
@@ -365,6 +449,23 @@ export default function HistorialPage() {
                                   {es.label}
                                 </span>
                               </td>
+                              {/* Columna Almacén para encargado */}
+                              {isEncargado && (
+                                <td className="px-4 py-3">
+                                  <div className="flex flex-col gap-0.5">
+                                    <span className="text-xs font-semibold text-gray-700">{almacenFocal?.nombre || '—'}</span>
+                                    <span className={`text-[10px] font-bold px-1.5 py-0.5 rounded-full w-fit ${
+                                      dirEncargado === 'salida'
+                                        ? 'bg-orange-50 text-orange-600 border border-orange-200'
+                                        : dirEncargado === 'entrada'
+                                        ? 'bg-emerald-50 text-emerald-600 border border-emerald-200'
+                                        : 'bg-blue-50 text-blue-600 border border-blue-200'
+                                    }`}>
+                                      {dirEncargado === 'salida' ? '↑ Salida' : dirEncargado === 'entrada' ? '↓ Entrada' : '↔ Interno'}
+                                    </span>
+                                  </div>
+                                </td>
+                              )}
                               <td className="px-4 py-3 text-xs text-gray-600 max-w-[180px]">
                                 <span className="truncate block">{m.almacenOrigen?.nombre || '—'}</span>
                                 <span className="text-gray-400">→ {m.almacenDestino?.nombre || '—'}</span>
@@ -400,7 +501,7 @@ export default function HistorialPage() {
                             {/* Fila expandida */}
                             {isExp && (
                               <tr key={`exp-${m.id}`} className="bg-blue-50/20">
-                                <td colSpan={7} className="px-6 py-3 border-b border-blue-100">
+                                <td colSpan={isEncargado ? 8 : 7} className="px-6 py-3 border-b border-blue-100">
                                   <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                                     <div>
                                       <p className="text-[10px] font-semibold uppercase text-gray-400 mb-2">Productos</p>
@@ -414,6 +515,8 @@ export default function HistorialPage() {
                                       </div>
                                     </div>
                                     <div className="space-y-1.5 text-xs text-gray-500">
+                                      <p>Origen: <span className="font-semibold text-gray-700">{m.almacenOrigen?.nombre || '—'}</span></p>
+                                      <p>Destino: <span className="font-semibold text-gray-700">{m.almacenDestino?.nombre || '—'}</span></p>
                                       {m.usuarioAprobador && <p>Aprobado por: <span className="font-semibold text-gray-700">{m.usuarioAprobador.nombre}</span></p>}
                                       {m.transportadoPor && <p>Transportista: <span className="font-semibold text-gray-700">{m.transportadoPor}</span></p>}
                                       {m.observaciones && <p>Obs.: <span className="italic text-gray-600">{m.observaciones}</span></p>}
@@ -423,7 +526,7 @@ export default function HistorialPage() {
                                 </td>
                               </tr>
                             )}
-                          </>
+                          </React.Fragment>
                         );
                       })}
                     </tbody>
@@ -435,12 +538,25 @@ export default function HistorialPage() {
                   {paged.map(m => {
                     const es = ESTADO_STYLE[m.estado] || { bg: '#f3f4f6', color: '#374151', label: m.estado };
                     const isExp = expanded === m.id;
+                    const esOrigenMob = isEncargado && almacenesUsuario.some(a => a.id === m.almacenOrigen?.id);
+                    const esDestinoMob = isEncargado && almacenesUsuario.some(a => a.id === m.almacenDestino?.id);
+                    const almacenFocal = isEncargado ? (esOrigenMob ? m.almacenOrigen : m.almacenDestino) : null;
+                    const dirMob = esOrigenMob && esDestinoMob ? 'interno' : esOrigenMob ? 'salida' : 'entrada';
                     return (
                       <div key={m.id} className={`p-4 ${isExp ? 'bg-blue-50/20' : ''}`} onClick={() => setExpanded(isExp ? null : m.id)}>
                         <div className="flex items-start justify-between gap-2 mb-2">
                           <div className="flex items-center gap-2 flex-wrap">
                             <span className="text-xs font-bold text-blue-700 bg-blue-100 px-1.5 py-0.5 rounded">#{m.id}</span>
                             <span className="text-[10px] font-bold px-2 py-0.5 rounded-full" style={{ background: es.bg, color: es.color }}>{es.label}</span>
+                            {isEncargado && almacenFocal && (
+                              <span className={`text-[10px] font-semibold px-2 py-0.5 rounded-full border ${
+                                dirMob === 'salida' ? 'bg-orange-50 text-orange-600 border-orange-200'
+                                : dirMob === 'entrada' ? 'bg-emerald-50 text-emerald-600 border-emerald-200'
+                                : 'bg-blue-50 text-blue-600 border-blue-200'
+                              }`}>
+                                {dirMob === 'salida' ? '↑' : dirMob === 'entrada' ? '↓' : '↔'} {almacenFocal.nombre}
+                              </span>
+                            )}
                           </div>
                           <span className="text-[10px] text-gray-400 whitespace-nowrap">{formatDate(m.fechaSolicitud)}</span>
                         </div>

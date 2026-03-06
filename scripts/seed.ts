@@ -1,5 +1,5 @@
 import { db } from '../db';
-import { almacenes, users, productos, inventario } from '../db/schema';
+import { almacenes, users, productos, inventario, usuariosAlmacenes } from '../db/schema';
 
 async function seed() {
   console.log('🌱 Iniciando seed de la base de datos...');
@@ -29,7 +29,7 @@ async function seed() {
 
     // 2. Crear usuarios
     console.log('👥 Creando usuarios...');
-    await db.insert(users).values([
+    const createdUsers = await db.insert(users).values([
       {
         nombre: 'Juan Pérez',
         email: 'juan.perez@empresa.com',
@@ -54,9 +54,19 @@ async function seed() {
         almacenId: almacenCentral.id,
         rol: 'admin'
       }
-    ]);
+    ]).returning();
 
-    console.log('✅ Usuarios creados');
+    // 2b. Asignar almacenes en tabla pivote (usuariosAlmacenes)
+    console.log('🔗 Asignando almacenes a usuarios...');
+    await db.insert(usuariosAlmacenes).values(
+      createdUsers.map(u => ({
+        usuarioId: u.id,
+        almacenId: u.almacenId!,
+        esPrincipal: 1
+      }))
+    );
+
+    console.log('✅ Usuarios y asignaciones creadas');
 
     // 3. Crear catálogo de productos
     console.log('📋 Creando catálogo de productos...');

@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useRef } from 'react';
 import { useSession } from 'next-auth/react';
 import { generarPDFSalida } from '@/lib/utils/pdf';
 
@@ -52,6 +52,13 @@ export default function ModalSalida({ open, onClose, onSuccess }: ModalSalidaPro
   const [stockDisponible, setStockDisponible] = useState<number | null>(null);
   const [dataLoaded, setDataLoaded] = useState(false);
 
+  // ── Buscador de almacén destino ──
+  const [almacenBusqueda, setAlmacenBusqueda] = useState('');
+  const [showAlmacenDropdown, setShowAlmacenDropdown] = useState(false);
+  const [almacenDestinoNombre, setAlmacenDestinoNombre] = useState('');
+  const almacenInputRef = useRef<HTMLInputElement>(null);
+  const almacenDropRef = useRef<HTMLDivElement>(null);
+
   useEffect(() => {
     if (open && !dataLoaded) {
       fetchAlmacenes();
@@ -60,14 +67,31 @@ export default function ModalSalida({ open, onClose, onSuccess }: ModalSalidaPro
     }
     if (!open) {
       setAlmacenDestinoId('');
+      setAlmacenDestinoNombre('');
+      setAlmacenBusqueda('');
       setTransportadoPor('');
       setProductosSeleccionados([]);
       setObservaciones('');
       setMessage(null);
       setShowProductoModal(false);
+      setShowAlmacenDropdown(false);
       setDataLoaded(false);
     }
   }, [open]);
+
+  // Cerrar dropdown al clic fuera
+  useEffect(() => {
+    const handler = (e: MouseEvent) => {
+      if (
+        almacenDropRef.current && !almacenDropRef.current.contains(e.target as Node) &&
+        almacenInputRef.current && !almacenInputRef.current.contains(e.target as Node)
+      ) {
+        setShowAlmacenDropdown(false);
+      }
+    };
+    document.addEventListener('mousedown', handler);
+    return () => document.removeEventListener('mousedown', handler);
+  }, []);
 
   useEffect(() => {
     if (!productoActual || !session?.user) { setStockDisponible(null); return; }
@@ -115,11 +139,21 @@ export default function ModalSalida({ open, onClose, onSuccess }: ModalSalidaPro
     setProductosSeleccionados(prev => prev.map(p => p.productoId === productoId ? { ...p, cantidad } : p));
   };
 
+  const almacenesUsuario: { id: number, nombre: string }[] = (session?.user as any)?.almacenes || [];
+  const esMultiAlmacen = almacenesUsuario.length > 0;
+  const userAlmacenDefectoId = (session?.user as any)?.almacenId;
+
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     setMessage(null);
     if (!session?.user?.id) { setMessage({ type: 'error', text: 'No estás autenticado' }); return; }
+
+    // Determinar origen
+    const origenFinalId = almacenOrigenId || (esMultiAlmacen ? String(almacenesUsuario[0]?.id) : String(userAlmacenDefectoId));
+
+    if (!origenFinalId || origenFinalId === 'undefined') { setMessage({ type: 'error', text: 'No tienes un almacén de origen válido' }); return; }
     if (!almacenDestinoId) { setMessage({ type: 'error', text: 'Selecciona un almacén de destino' }); return; }
+    if (origenFinalId === almacenDestinoId) { setMessage({ type: 'error', text: 'El almacén de destino no puede ser igual al de origen' }); return; }
     if (productosSeleccionados.length === 0) { setMessage({ type: 'error', text: 'Agrega al menos un producto' }); return; }
 
     const userId = parseInt(session.user.id);
@@ -219,8 +253,8 @@ export default function ModalSalida({ open, onClose, onSuccess }: ModalSalidaPro
         <div className="overflow-y-auto flex-1 px-6 py-5">
           {message && (
             <div className={`mb-4 p-3 rounded-xl flex items-center gap-2.5 text-sm font-medium ${message.type === 'success'
-                ? 'bg-emerald-50 text-emerald-800 border border-emerald-200'
-                : 'bg-red-50 text-red-800 border border-red-200'
+              ? 'bg-emerald-50 text-emerald-800 border border-emerald-200'
+              : 'bg-red-50 text-red-800 border border-red-200'
               }`}>
               {message.type === 'success' ? (
                 <svg className="w-4 h-4 flex-shrink-0 text-emerald-500" fill="currentColor" viewBox="0 0 20 20">
@@ -237,22 +271,101 @@ export default function ModalSalida({ open, onClose, onSuccess }: ModalSalidaPro
 
           <form onSubmit={handleSubmit} id="form-salida" className="space-y-5">
 
-            {/* Almacén destino */}
+            {/* Almacén destino con buscador */}
             <div>
               <label className="field-label">
                 Almacén de Destino <span className="text-red-500">*</span>
               </label>
-              <select
-                value={almacenDestinoId}
-                onChange={e => setAlmacenDestinoId(e.target.value)}
-                className="input-field"
-                required
-              >
-                <option value="">Seleccionar almacén...</option>
-                {almacenes
-                  .filter(a => a.id !== (session?.user as any)?.almacenId)
-                  .map(a => <option key={a.id} value={a.id}>{a.nombre}</option>)}
-              </select>
+              <div className="relative" ref={almacenDropRef}>
+                {/* Input buscador */}
+                <div
+                  className={`input-field flex items-center gap-2 cursor-text transition-all ${showAlmacenDropdown ? 'ring-2 ring-blue-400 border-blue-400' : ''
+                    }`}
+                  onClick={() => { setShowAlmacenDropdown(true); setTimeout(() => almacenInputRef.current?.focus(), 0); }}
+                >
+                  {/* Ícono búsqueda */}
+                  <svg className="w-4 h-4 text-gray-400 flex-shrink-0" fill="none" stroke="currentColor" strokeWidth={2} viewBox="0 0 24 24">
+                    <path strokeLinecap="round" strokeLinejoin="round" d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z" />
+                  </svg>
+                  <input
+                    ref={almacenInputRef}
+                    type="text"
+                    className="flex-1 bg-transparent outline-none text-sm text-gray-800 placeholder-gray-400"
+                    placeholder={almacenDestinoId ? almacenDestinoNombre : 'Buscar almacén...'}
+                    value={showAlmacenDropdown ? almacenBusqueda : (almacenDestinoId ? almacenDestinoNombre : '')}
+                    onChange={e => { setAlmacenBusqueda(e.target.value); setShowAlmacenDropdown(true); }}
+                    onFocus={() => setShowAlmacenDropdown(true)}
+                  />
+                  {/* Botón limpiar */}
+                  {almacenDestinoId && (
+                    <button
+                      type="button"
+                      onClick={e => {
+                        e.stopPropagation();
+                        setAlmacenDestinoId('');
+                        setAlmacenDestinoNombre('');
+                        setAlmacenBusqueda('');
+                        almacenInputRef.current?.focus();
+                      }}
+                      className="flex-shrink-0 w-4 h-4 rounded-full bg-gray-200 hover:bg-gray-300 flex items-center justify-center transition-colors"
+                    >
+                      <svg className="w-2.5 h-2.5 text-gray-600" fill="none" stroke="currentColor" strokeWidth={2.5} viewBox="0 0 24 24">
+                        <path strokeLinecap="round" strokeLinejoin="round" d="M6 18L18 6M6 6l12 12" />
+                      </svg>
+                    </button>
+                  )}
+                  {/* Indicador de selección */}
+                  {almacenDestinoId && (
+                    <svg className="w-4 h-4 text-blue-500 flex-shrink-0" fill="none" stroke="currentColor" strokeWidth={2.5} viewBox="0 0 24 24">
+                      <path strokeLinecap="round" strokeLinejoin="round" d="M5 13l4 4L19 7" />
+                    </svg>
+                  )}
+                </div>
+
+                {/* Dropdown lista */}
+                {showAlmacenDropdown && (() => {
+                  const userAlmacenId = (session?.user as any)?.almacenId;
+                  const opciones = almacenes
+                    .filter(a => a.id !== userAlmacenId)
+                    .filter(a =>
+                      almacenBusqueda.trim() === '' ||
+                      a.nombre.toLowerCase().includes(almacenBusqueda.toLowerCase())
+                    );
+                  return (
+                    <div className="absolute z-50 w-full mt-1 bg-white rounded-xl shadow-lg border border-gray-200 max-h-52 overflow-auto">
+                      {opciones.length === 0 ? (
+                        <p className="px-4 py-3 text-sm text-gray-400 text-center">Sin resultados para "{almacenBusqueda}"</p>
+                      ) : (
+                        opciones.map(a => (
+                          <button
+                            key={a.id}
+                            type="button"
+                            onClick={() => {
+                              setAlmacenDestinoId(String(a.id));
+                              setAlmacenDestinoNombre(a.nombre);
+                              setAlmacenBusqueda('');
+                              setShowAlmacenDropdown(false);
+                            }}
+                            className={`w-full text-left px-4 py-2.5 text-sm transition-colors flex items-center justify-between ${almacenDestinoId === String(a.id)
+                              ? 'bg-blue-50 text-blue-700 font-semibold'
+                              : 'text-gray-700 hover:bg-gray-50'
+                              }`}
+                          >
+                            <span>🏢 {a.nombre}</span>
+                            {almacenDestinoId === String(a.id) && (
+                              <svg className="w-3.5 h-3.5 text-blue-500" fill="currentColor" viewBox="0 0 20 20">
+                                <path fillRule="evenodd" d="M16.707 5.293a1 1 0 010 1.414l-8 8a1 1 0 01-1.414 0l-4-4a1 1 0 011.414-1.414L8 12.586l7.293-7.293a1 1 0 011.414 0z" clipRule="evenodd" />
+                              </svg>
+                            )}
+                          </button>
+                        ))
+                      )}
+                    </div>
+                  );
+                })()}
+              </div>
+              {/* Campo hidden para validación */}
+              <input type="hidden" value={almacenDestinoId} required />
             </div>
 
             {/* Dos columnas: Transportado por + (placeholder) */}

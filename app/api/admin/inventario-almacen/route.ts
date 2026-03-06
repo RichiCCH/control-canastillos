@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { db } from '@/db';
 import { inventario, productos, almacenes } from '@/db/schema';
-import { eq, and } from 'drizzle-orm';
+import { eq, and, sql } from 'drizzle-orm';
 import { requirePermission, unauthorizedResponse, forbiddenResponse } from '@/lib/auth';
 
 export const dynamic = 'force-dynamic';
@@ -23,43 +23,25 @@ export async function GET(request: NextRequest) {
 
     const almacenIdNum = parseInt(almacenId);
 
-    // Obtener todos los productos activos con su inventario en este almacén
-    const productosActivos = await db
+    // Single LEFT JOIN query: all active products with their stock in this almacén
+    const inventarioCompleto = await db
       .select({
         productoId: productos.id,
-        productoCodigo: productos.codigo,
-        productoNombre: productos.nombre,
-        productoTipo: productos.tipo,
+        codigo: productos.codigo,
+        nombre: productos.nombre,
+        tipo: productos.tipo,
+        stockActual: sql<number>`coalesce(${inventario.cantidad}, 0)`,
       })
       .from(productos)
+      .leftJoin(
+        inventario,
+        and(
+          eq(inventario.productoId, productos.id),
+          eq(inventario.almacenId, almacenIdNum)
+        )
+      )
       .where(eq(productos.activo, 1))
       .orderBy(productos.nombre);
-
-    // Para cada producto, obtener su stock actual en el almacén
-    const inventarioCompleto = await Promise.all(
-      productosActivos.map(async (producto) => {
-        const stockData = await db
-          .select({
-            cantidad: inventario.cantidad,
-          })
-          .from(inventario)
-          .where(
-            and(
-              eq(inventario.productoId, producto.productoId),
-              eq(inventario.almacenId, almacenIdNum)
-            )
-          )
-          .limit(1);
-
-        return {
-          productoId: producto.productoId,
-          codigo: producto.productoCodigo,
-          nombre: producto.productoNombre,
-          tipo: producto.productoTipo,
-          stockActual: stockData[0]?.cantidad || 0,
-        };
-      })
-    );
 
     return NextResponse.json(inventarioCompleto);
   } catch (error) {

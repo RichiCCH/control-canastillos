@@ -147,7 +147,9 @@ export default function Navigation() {
             </div>
             <div className="hidden sm:block leading-tight">
               <p className="text-xs font-semibold text-foreground">{userName}</p>
-              <p className="text-[10px] text-muted-foreground capitalize">{role}</p>
+              <p className="text-xs text-muted-foreground capitalize">
+                {role === 'encargado' ? 'Encargado de Área' : role}
+              </p>
             </div>
             <button
               onClick={() => signOut({ callbackUrl: '/login' })}

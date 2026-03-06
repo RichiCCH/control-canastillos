@@ -9,12 +9,19 @@ export async function GET(request: NextRequest) {
   try {
     const { searchParams } = new URL(request.url);
     const almacenId = searchParams.get('almacenId');
+    const almacenesParam = searchParams.get('almacenes'); // "1,3,5" para encargado multi
 
-    if (!almacenId) {
-      return NextResponse.json({ error: 'almacenId es requerido' }, { status: 400 });
+    // Construir lista de almacenes a filtrar
+    let almacenIds: number[] = [];
+    if (almacenesParam) {
+      almacenIds = almacenesParam.split(',').map(Number).filter(Boolean);
+    } else if (almacenId) {
+      almacenIds = [parseInt(almacenId)];
     }
 
-    const almacenIdNum = parseInt(almacenId);
+    if (almacenIds.length === 0) {
+      return NextResponse.json({ error: 'almacenId o almacenes es requerido' }, { status: 400 });
+    }
 
     // ─── 1. Un solo query para todos los movimientos ───────────────────────────
     const movimientosData = await db
@@ -35,18 +42,22 @@ export async function GET(request: NextRequest) {
       })
       .from(movimientos)
       .where(or(
-        eq(movimientos.almacenOrigenId, almacenIdNum),
-        eq(movimientos.almacenDestinoId, almacenIdNum),
+        inArray(movimientos.almacenOrigenId, almacenIds),
+        inArray(movimientos.almacenDestinoId, almacenIds),
       ))
       .orderBy(desc(movimientos.fechaSolicitud));
+
+    // Set de almacenIds para calcular tipo por movimiento
+    const almacenIdsSet = new Set(almacenIds);
+
 
     if (movimientosData.length === 0) {
       return NextResponse.json([]);
     }
 
-    // ─── 2. Recopilar IDs únicos para queries en batch ─────────────────────────
+    // ─── 2. Recopilar IDs únicos de almacenes involucrados para lookup ─────────
     const movIds = movimientosData.map(m => m.id);
-    const almacenIds = [...new Set([
+    const almIdsBatch = [...new Set([
       ...movimientosData.map(m => m.almacenOrigenId).filter(Boolean),
       ...movimientosData.map(m => m.almacenDestinoId).filter(Boolean),
     ])] as number[];
@@ -57,10 +68,10 @@ export async function GET(request: NextRequest) {
 
     // ─── 3. Queries en paralelo (3 queries total en vez de N*3) ───────────────
     const [almacenesData, usersData, detallesData] = await Promise.all([
-      almacenIds.length > 0
+      almIdsBatch.length > 0
         ? db.select({ id: almacenes.id, nombre: almacenes.nombre })
           .from(almacenes)
-          .where(inArray(almacenes.id, almacenIds))
+          .where(inArray(almacenes.id, almIdsBatch))
         : Promise.resolve([]),
       userIds.length > 0
         ? db.select({ id: users.id, nombre: users.nombre })
@@ -97,7 +108,8 @@ export async function GET(request: NextRequest) {
       let tipo: string;
       if (mov.tipoMovimiento === 'entrada') tipo = 'ajuste_entrada';
       else if (mov.tipoMovimiento === 'baja') tipo = 'ajuste_baja';
-      else tipo = mov.almacenDestinoId === almacenIdNum ? 'entrada' : 'salida';
+      // Para multi-almacén: si el destino es uno de los almacenes del encargado → entrada
+      else tipo = (mov.almacenDestinoId && almacenIdsSet.has(mov.almacenDestinoId)) ? 'entrada' : 'salida';
 
       const detalles = (detallesMap.get(mov.id) ?? []).map(d => ({
         id: d.id,
