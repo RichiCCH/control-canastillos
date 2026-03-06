@@ -4,6 +4,8 @@ import { users, almacenes, usuariosAlmacenes } from '@/db/schema';
 import { eq, inArray } from 'drizzle-orm';
 import { requirePermission, unauthorizedResponse, forbiddenResponse } from '@/lib/auth';
 
+export const dynamic = 'force-dynamic';
+
 const ROLES_VALIDOS = ['admin', 'encargado', 'supervisor', 'operador'];
 
 // GET - Obtener todos los usuarios con información de almacén(es)

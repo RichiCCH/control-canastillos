@@ -4,6 +4,8 @@ import { almacenes, users } from '@/db/schema';
 import { eq, sql } from 'drizzle-orm';
 import { requirePermission, unauthorizedResponse, forbiddenResponse } from '@/lib/auth';
 
+export const dynamic = 'force-dynamic';
+
 // GET - Obtener todos los almacenes con información de usuarios asignados
 export async function GET(request: NextRequest) {
   try {

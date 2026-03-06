@@ -2,6 +2,8 @@ import { NextRequest, NextResponse } from 'next/server';
 import { obtenerNotificaciones, marcarNotificacionComoLeida, marcarTodasComoLeidas } from '@/lib/notifications';
 import { requirePermission, unauthorizedResponse } from '@/lib/auth';
 
+export const dynamic = 'force-dynamic';
+
 // GET - Obtener notificaciones del usuario
 export async function GET(request: NextRequest) {
   try {

@@ -3,6 +3,8 @@ import { db } from '@/db';
 import { movimientos, almacenes, users, movimientosDetalle, productos } from '@/db/schema';
 import { eq, inArray } from 'drizzle-orm';
 
+export const dynamic = 'force-dynamic';
+
 const almacenesDestino = almacenes;
 const usersAprobador = users;
 

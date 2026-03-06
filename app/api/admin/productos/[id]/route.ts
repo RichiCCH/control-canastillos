@@ -4,6 +4,8 @@ import { productos, inventario } from '@/db/schema';
 import { eq, and, ne, sql } from 'drizzle-orm';
 import { requirePermission, unauthorizedResponse, forbiddenResponse } from '@/lib/auth';
 
+export const dynamic = 'force-dynamic';
+
 // PATCH - Actualizar producto
 export async function PATCH(
   request: NextRequest,

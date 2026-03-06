@@ -5,6 +5,8 @@ import { eq, and, inArray } from 'drizzle-orm';
 import { requirePermission, unauthorizedResponse, forbiddenResponse } from '@/lib/auth';
 import { crearNotificacionMovimientoRechazado } from '@/lib/notifications';
 
+export const dynamic = 'force-dynamic';
+
 // POST - Rechazar un movimiento
 export async function POST(
   request: NextRequest,

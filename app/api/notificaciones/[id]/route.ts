@@ -2,6 +2,8 @@ import { NextRequest, NextResponse } from 'next/server';
 import { marcarNotificacionComoLeida } from '@/lib/notifications';
 import { requirePermission, unauthorizedResponse } from '@/lib/auth';
 
+export const dynamic = 'force-dynamic';
+
 // PATCH - Marcar una notificación como leída
 export async function PATCH(
   request: NextRequest,

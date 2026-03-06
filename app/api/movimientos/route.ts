@@ -4,6 +4,8 @@ import { movimientos, movimientosDetalle, inventario, productos, almacenes, user
 import { eq, and, sql, inArray, or } from 'drizzle-orm';
 import { crearNotificacionNuevoMovimiento } from '@/lib/notifications';
 
+export const dynamic = 'force-dynamic';
+
 // GET - Obtener movimientos pendientes para un almacén
 export async function GET(request: Request) {
   try {

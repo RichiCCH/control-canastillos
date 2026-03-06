@@ -4,6 +4,8 @@ import { productos } from '@/db/schema';
 import { eq } from 'drizzle-orm';
 import { requirePermission, unauthorizedResponse, forbiddenResponse } from '@/lib/auth';
 
+export const dynamic = 'force-dynamic';
+
 // GET - Obtener todos los productos (incluyendo inactivos)
 export async function GET(request: NextRequest) {
   try {

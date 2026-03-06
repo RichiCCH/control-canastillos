@@ -3,6 +3,8 @@ import { db } from '@/db';
 import { almacenes } from '@/db/schema';
 import { eq } from 'drizzle-orm';
 
+export const dynamic = 'force-dynamic';
+
 // GET - Obtener todos los almacenes activos (para usar en formularios)
 export async function GET() {
   try {

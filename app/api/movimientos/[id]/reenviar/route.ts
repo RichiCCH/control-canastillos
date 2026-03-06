@@ -5,6 +5,8 @@ import { eq, and } from 'drizzle-orm';
 import { requirePermission, unauthorizedResponse, forbiddenResponse } from '@/lib/auth';
 import { crearNotificacionNuevoMovimiento } from '@/lib/notifications';
 
+export const dynamic = 'force-dynamic';
+
 // POST - Reenviar un movimiento rechazado (actualiza productos y cambia a pendiente)
 export async function POST(
   request: NextRequest,

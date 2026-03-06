@@ -3,6 +3,8 @@ import { db } from '@/db';
 import { users, almacenes } from '@/db/schema';
 import { eq } from 'drizzle-orm';
 
+export const dynamic = 'force-dynamic';
+
 // GET - Obtener todos los usuarios con su almacén
 export async function GET() {
   try {
