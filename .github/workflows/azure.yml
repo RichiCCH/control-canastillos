@@ -28,6 +28,7 @@ jobs:
           npm run build
           cp -r public .next/standalone/
           cp -r .next/static .next/standalone/.next/
+          cp web.config .next/standalone/ || true
           cd .next/standalone
           zip -qq -r ../../nextjs-app.zip .
 
