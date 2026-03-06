@@ -30,10 +30,19 @@ jobs:
         run: |
           npm ci
           npm run build
+          echo "=== Estructura .next/standalone ==="
+          ls -la .next/standalone/
+          ls -la .next/standalone/.next/ || echo "NO HAY .next en standalone"
+          echo "=== CSS hash ==="
+          ls .next/static/css/
           cp -r public .next/standalone/
           cp -r .next/static .next/standalone/.next/
           echo '{"name":"app","version":"1.0.0","scripts":{"start":"node server.js"}}' > .next/standalone/package.json
+          echo "=== Despues de copiar ==="
+          ls .next/standalone/.next/static/css/
           cd .next/standalone && zip -qq -r ../../app.zip .
+          echo "=== Tamaño del zip ==="
+          ls -lh ../../app.zip || ls -lh ../../../app.zip || ls -lh app.zip
 
       - name: Login to Azure
         uses: azure/login@v2
