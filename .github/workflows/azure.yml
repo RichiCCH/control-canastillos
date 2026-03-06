@@ -28,8 +28,10 @@ jobs:
           npm run build
           cp -r public .next/standalone/
           cp -r .next/static .next/standalone/.next/
-          # Reemplazar package.json del standalone para que 'npm start' = 'node server.js'
+          # Reemplazar package.json para que npm start = node server.js
           echo '{"name":"app","version":"1.0.0","scripts":{"start":"node server.js"}}' > .next/standalone/package.json
+          # Decirle a Oryx que NO haga build
+          cp .deployment .next/standalone/.deployment
 
       - name: Deploy to Azure Web App
         uses: azure/webapps-deploy@v3
