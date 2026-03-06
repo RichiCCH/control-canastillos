@@ -44,21 +44,28 @@ jobs:
 
       - name: Configure and deploy
         run: |
-          # Limpiar archivos viejos de Oryx
-          az webapp ssh --resource-group approlon --name ${{ env.AZURE_WEBAPP_NAME }} \
-            --command "rm -f /home/site/wwwroot/oryx-manifest.toml /home/site/wwwroot/node_modules.tar.gz" || true
-
           # Configurar startup command
           az webapp config set \
             --resource-group approlon \
             --name ${{ env.AZURE_WEBAPP_NAME }} \
             --startup-file "node server.js"
 
-          # Deploy del zip
+          # Detener app, limpiar wwwroot completamente, desplegar, reiniciar
+          az webapp stop --resource-group approlon --name ${{ env.AZURE_WEBAPP_NAME }} || true
+
+          # Limpiar wwwroot via Kudu REST API
+          KUDU_URL="https://${{ env.AZURE_WEBAPP_NAME }}.scm.azurewebsites.net"
+          TOKEN=$(az account get-access-token --resource "https://management.azure.com" --query accessToken -o tsv)
+          curl -s -X DELETE "$KUDU_URL/api/vfs/site/wwwroot/?recursive=true" \
+            -H "Authorization: Bearer $TOKEN" || true
+
+          # Deploy del zip limpio
           az webapp deploy \
             --resource-group approlon \
             --name ${{ env.AZURE_WEBAPP_NAME }} \
             --src-path app.zip \
             --type zip \
-            --clean true \
-            --restart true
+            --clean true
+
+          # Reiniciar
+          az webapp start --resource-group approlon --name ${{ env.AZURE_WEBAPP_NAME }}
