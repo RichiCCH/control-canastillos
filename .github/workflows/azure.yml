@@ -29,6 +29,7 @@ jobs:
           cp -r public .next/standalone/
           cp -r .next/static .next/standalone/.next/
           cp web.config .next/standalone/ || true
+          node -e "const fs = require('fs'); let b = fs.readFileSync('.next/standalone/server.js', 'utf8'); b = b.replace(/const currentPort.*/, 'const currentPort = process.env.PORT || 3000;'); b = b.replace(/const hostname.*/, 'const hostname = isNaN(currentPort) ? undefined : (process.env.HOSTNAME || \'0.0.0.0\');'); fs.writeFileSync('.next/standalone/server.js', b);"
           cd .next/standalone
           zip -qq -r ../../nextjs-app.zip .
 
