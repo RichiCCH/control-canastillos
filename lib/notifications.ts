@@ -1,6 +1,7 @@
 import { db } from '@/db';
-import { notificaciones, users, almacenes } from '@/db/schema';
+import { notificaciones, users } from '@/db/schema';
 import { eq } from 'drizzle-orm';
+import { enviarPushAUsuario } from './push';
 
 export async function crearNotificacionNuevoMovimiento(
   movimientoId: number,
@@ -20,13 +21,16 @@ export async function crearNotificacionNuevoMovimiento(
 
     // Crear notificación para cada usuario del almacén destino
     for (const usuario of usuariosDestino) {
+      const titulo = 'Nuevo envío recibido';
+      const mensaje = `${usuarioSolicitanteNombre} te ha enviado productos desde ${almacenOrigenNombre}. Revisa la sección de Recepciones para aprobar o rechazar.`;
       await db.insert(notificaciones).values({
         usuarioId: usuario.id,
         movimientoId: movimientoId,
         tipo: 'nuevo_movimiento',
-        titulo: 'Nuevo envío recibido',
-        mensaje: `${usuarioSolicitanteNombre} te ha enviado productos desde ${almacenOrigenNombre}. Revisa la sección de Recepciones para aprobar o rechazar.`,
+        titulo,
+        mensaje,
       });
+      enviarPushAUsuario(usuario.id, titulo, mensaje, '/recepciones').catch(() => {});
     }
 
     return true;
@@ -43,13 +47,16 @@ export async function crearNotificacionMovimientoAprobado(
   usuarioAprobadorNombre: string
 ) {
   try {
+    const titulo = 'Envío aprobado';
+    const mensaje = `${usuarioAprobadorNombre} de ${almacenDestinoNombre} ha aprobado tu envío.`;
     await db.insert(notificaciones).values({
       usuarioId: usuarioSolicitanteId,
       movimientoId: movimientoId,
       tipo: 'movimiento_aprobado',
-      titulo: 'Envío aprobado',
-      mensaje: `${usuarioAprobadorNombre} de ${almacenDestinoNombre} ha aprobado tu envío.`,
+      titulo,
+      mensaje,
     });
+    enviarPushAUsuario(usuarioSolicitanteId, titulo, mensaje, '/mis-movimientos').catch(() => {});
 
     return true;
   } catch (error) {
@@ -77,6 +84,7 @@ export async function crearNotificacionMovimientoRechazado(
       titulo: 'Envío rechazado',
       mensaje: mensaje,
     });
+    enviarPushAUsuario(usuarioSolicitanteId, 'Envío rechazado', mensaje, '/mis-movimientos').catch(() => {});
 
     return true;
   } catch (error) {

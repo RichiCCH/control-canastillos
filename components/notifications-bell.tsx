@@ -37,6 +37,39 @@ export default function NotificationsBell({ onOpenRecepciones }: Props) {
     return () => document.removeEventListener('mousedown', handleClickOutside);
   }, []);
 
+  // Registrar Service Worker y suscribirse a push
+  useEffect(() => {
+    if (!session?.user || typeof window === 'undefined') return;
+    if (!('serviceWorker' in navigator) || !('PushManager' in window)) return;
+
+    const registerPush = async () => {
+      try {
+        const reg = await navigator.serviceWorker.register('/sw.js');
+        const permission = await Notification.requestPermission();
+        if (permission !== 'granted') return;
+
+        const existing = await reg.pushManager.getSubscription();
+        if (existing) return; // ya suscrito
+
+        const res = await fetch('/api/push');
+        const { publicKey } = await res.json();
+
+        const sub = await reg.pushManager.subscribe({
+          userVisibleOnly: true,
+          applicationServerKey: publicKey,
+        });
+
+        await fetch('/api/push', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(sub.toJSON()),
+        });
+      } catch { }
+    };
+
+    registerPush();
+  }, [session]);
+
   const fetchNotificaciones = async () => {
     if (!session?.user) return;
     try {

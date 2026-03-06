@@ -230,6 +230,23 @@ export const notificacionesRelations = relations(notificaciones, ({ one }) => ({
   }),
 }));
 
+// Tabla de suscripciones push (Web Push API)
+export const pushSubscriptions = pgTable('push_subscriptions', {
+  id: serial('id').primaryKey(),
+  usuarioId: integer('usuario_id').notNull().references(() => users.id, { onDelete: 'cascade' }),
+  endpoint: text('endpoint').notNull().unique(),
+  p256dh: text('p256dh').notNull(),
+  auth: text('auth').notNull(),
+  createdAt: timestamp('created_at').defaultNow().notNull(),
+});
+
+export const pushSubscriptionsRelations = relations(pushSubscriptions, ({ one }) => ({
+  usuario: one(users, {
+    fields: [pushSubscriptions.usuarioId],
+    references: [users.id],
+  }),
+}));
+
 // Tipos TypeScript inferidos del esquema
 export type Almacen = typeof almacenes.$inferSelect;
 export type NewAlmacen = typeof almacenes.$inferInsert;
