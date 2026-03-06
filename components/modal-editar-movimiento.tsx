@@ -11,7 +11,7 @@ interface Detalle {
 
 interface Movimiento {
     id: number;
-    almacenDestino: { id: number; nombre: string };
+    almacenDestino: { id: number; nombre: string } | null;
     transportadoPor: string | null;
     observaciones: string | null;
     detalles: Detalle[];
@@ -106,7 +106,7 @@ export default function ModalEditarMovimiento({ movimiento, open, onClose, onSuc
                         <div>
                             <h2 className="text-base font-bold text-white">Editar y Reenviar</h2>
                             <p className="text-xs text-amber-100">
-                                Movimiento #{movimiento.id} → {movimiento.almacenDestino.nombre}
+                                Movimiento #{movimiento.id} → {movimiento.almacenDestino?.nombre}
                             </p>
                         </div>
                     </div>
@@ -136,7 +136,7 @@ export default function ModalEditarMovimiento({ movimiento, open, onClose, onSuc
                         <ArrowRight className="w-4 h-4 text-gray-400 flex-shrink-0" />
                         <div>
                             <p className="text-[10px] font-semibold uppercase tracking-wider text-gray-400">Destino</p>
-                            <p className="text-sm font-semibold text-gray-800">{movimiento.almacenDestino.nombre}</p>
+                            <p className="text-sm font-semibold text-gray-800">{movimiento.almacenDestino?.nombre}</p>
                         </div>
                     </div>
 
