@@ -149,7 +149,7 @@ export default function ModalSalida({ open, onClose, onSuccess }: ModalSalidaPro
     if (!session?.user?.id) { setMessage({ type: 'error', text: 'No estás autenticado' }); return; }
 
     // Determinar origen
-    const origenFinalId = almacenOrigenId || (esMultiAlmacen ? String(almacenesUsuario[0]?.id) : String(userAlmacenDefectoId));
+    const origenFinalId = esMultiAlmacen ? String(almacenesUsuario[0]?.id) : String(userAlmacenDefectoId);
 
     if (!origenFinalId || origenFinalId === 'undefined') { setMessage({ type: 'error', text: 'No tienes un almacén de origen válido' }); return; }
     if (!almacenDestinoId) { setMessage({ type: 'error', text: 'Selecciona un almacén de destino' }); return; }
