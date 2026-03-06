@@ -121,8 +121,12 @@ export default function Navigation() {
 
           {/* Logo */}
           <div className="flex items-center gap-2.5">
-            <div className="flex h-9 w-9 items-center justify-center rounded-xl flex-shrink-0 bg-gradient-to-br from-blue-500 to-blue-600 shadow-sm">
-              <Package className="h-5 w-5 text-white" />
+            <div className="flex h-9 w-9 items-center justify-center rounded-xl flex-shrink-0 bg-gradient-to-br from-blue-500 to-blue-700 shadow-sm">
+              <svg width="20" height="20" viewBox="0 0 44 44" fill="none" xmlns="http://www.w3.org/2000/svg">
+                <path d="M22 6L38 14V30L22 38L6 30V14L22 6Z" stroke="white" strokeWidth="2.5" strokeLinejoin="round"/>
+                <path d="M6 14L22 22L38 14" stroke="white" strokeWidth="2.5" strokeLinejoin="round"/>
+                <path d="M22 22L22 38" stroke="white" strokeWidth="2.5"/>
+              </svg>
             </div>
             <div className="hidden sm:block">
               <p className="text-sm font-bold leading-none text-foreground">Control de Inventario</p>

@@ -50,7 +50,15 @@ export default function LoginPage() {
         {/* Header Section */}
         <div className="text-center mb-8">
           <div className="inline-flex items-center justify-center mb-6">
-            <img src="/logo.png" alt="Logo" className="w-16 h-16 sm:w-24 sm:h-24 object-contain filter drop-shadow-xl" />
+            <div className="flex h-20 w-20 items-center justify-center rounded-2xl bg-gradient-to-br from-blue-500 to-blue-700 shadow-lg">
+              <svg width="44" height="44" viewBox="0 0 44 44" fill="none" xmlns="http://www.w3.org/2000/svg">
+                <path d="M22 6L38 14V30L22 38L6 30V14L22 6Z" stroke="white" strokeWidth="2" strokeLinejoin="round"/>
+                <path d="M22 6L22 38" stroke="white" strokeWidth="2" strokeOpacity="0.5"/>
+                <path d="M6 14L38 14" stroke="white" strokeWidth="2" strokeOpacity="0.5"/>
+                <path d="M6 14L22 22L38 14" stroke="white" strokeWidth="2" strokeLinejoin="round"/>
+                <path d="M22 22L22 38" stroke="white" strokeWidth="2"/>
+              </svg>
+            </div>
           </div>
           <h1 className="text-2xl font-bold text-slate-800 tracking-tight mb-2">
             Bienvenido
