@@ -10,6 +10,10 @@ env:
   AZURE_WEBAPP_NAME: inventariorolonapp
   NODE_VERSION: '20.x'
 
+permissions:
+  id-token: write
+  contents: read
+
 jobs:
   build-and-deploy:
     runs-on: ubuntu-latest
@@ -28,15 +32,28 @@ jobs:
           npm run build
           cp -r public .next/standalone/
           cp -r .next/static .next/standalone/.next/
-          # Reemplazar package.json para que npm start = node server.js
           echo '{"name":"app","version":"1.0.0","scripts":{"start":"node server.js"}}' > .next/standalone/package.json
-          # Decirle a Oryx que NO haga build
-          cp .deployment .next/standalone/.deployment
+          cd .next/standalone && zip -qq -r ../../app.zip .
 
-      - name: Deploy to Azure Web App
-        uses: azure/webapps-deploy@v3
+      - name: Login to Azure
+        uses: azure/login@v2
         with:
-          app-name: ${{ env.AZURE_WEBAPP_NAME }}
-          publish-profile: ${{ secrets.AZURE_WEBAPP_PUBLISH_PROFILE }}
-          package: .next/standalone
-          startup-command: 'node server.js'
+          client-id: ${{ secrets.AZUREAPPSERVICE_CLIENTID_045D2BA2149E4FC89D987F60A290BDD8 }}
+          tenant-id: ${{ secrets.AZUREAPPSERVICE_TENANTID_951CEB9D9384497D80207E5CCB392EDB }}
+          subscription-id: ${{ secrets.AZUREAPPSERVICE_SUBSCRIPTIONID_59A6DABC242940EAB20CA88C6CC7B617 }}
+
+      - name: Deploy zip to Azure Web App
+        run: |
+          az webapp deploy \
+            --resource-group approlon \
+            --name ${{ env.AZURE_WEBAPP_NAME }} \
+            --src-path app.zip \
+            --type zip \
+            --restart true
+
+      - name: Set startup command
+        run: |
+          az webapp config set \
+            --resource-group approlon \
+            --name ${{ env.AZURE_WEBAPP_NAME }} \
+            --startup-file "node server.js"
