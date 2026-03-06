@@ -37,17 +37,17 @@ export default function NotificationsBell({ onOpenRecepciones }: Props) {
     return () => document.removeEventListener('mousedown', handleClickOutside);
   }, []);
 
-  const [pushActivo, setPushActivo] = useState<boolean | null>(null); // null=no soportado, true=activo, false=inactivo
+  const [pushActivo, setPushActivo] = useState(false);
+  const pushSoportado = typeof window !== 'undefined' && 'serviceWorker' in navigator && 'PushManager' in window;
 
-  // Registrar SW al cargar (sin pedir permiso aún)
+  // Registrar SW al cargar y verificar suscripción existente
   useEffect(() => {
-    if (!session?.user || typeof window === 'undefined') return;
-    if (!('serviceWorker' in navigator) || !('PushManager' in window)) { setPushActivo(null); return; }
+    if (!session?.user || !pushSoportado) return;
 
     navigator.serviceWorker.register('/sw.js').then(async (reg) => {
       const existing = await reg.pushManager.getSubscription();
-      setPushActivo(!!existing);
-    }).catch(() => setPushActivo(null));
+      if (existing) setPushActivo(true);
+    }).catch(() => {});
   }, [session]);
 
   const activarPush = async () => {
@@ -315,7 +315,7 @@ export default function NotificationsBell({ onOpenRecepciones }: Props) {
               >
                 {verTodas ? 'Ver solo no leídas' : `Ver todas (${notificaciones.length})`}
               </button>
-              {pushActivo === false && (
+              {pushSoportado && !pushActivo && (
                 <button
                   onClick={activarPush}
                   className="w-full flex items-center justify-center gap-1.5 text-xs font-medium py-1.5 rounded-lg bg-blue-50 text-blue-700 hover:bg-blue-100 transition-colors"
@@ -324,7 +324,7 @@ export default function NotificationsBell({ onOpenRecepciones }: Props) {
                   Activar notificaciones en este dispositivo
                 </button>
               )}
-              {pushActivo === true && (
+              {pushActivo && (
                 <p className="text-center text-[10px] text-emerald-600 font-medium py-0.5">
                   <CheckCircle className="inline w-3 h-3 mr-1" />
                   Notificaciones activas en este dispositivo
