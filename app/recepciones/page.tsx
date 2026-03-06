@@ -400,11 +400,11 @@ export default function RecepcionesPage() {
               </div>
               <div>
                 <h3 className="text-base font-bold text-gray-900">Rechazar Movimiento</h3>
-                <p className="text-xs" className="text-gray-400">#{modalRechazo.movimientoId}</p>
+                <p className="text-xs text-gray-400">#{modalRechazo.movimientoId}</p>
               </div>
             </div>
             <label className="block text-sm font-semibold text-gray-800 mb-1.5">
-              Motivo <span className="font-normal" className="text-gray-400">(opcional)</span>
+              Motivo <span className="font-normal text-gray-400">(opcional)</span>
             </label>
             <textarea
               value={motivoRechazo}
