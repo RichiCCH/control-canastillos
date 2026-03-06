@@ -2,7 +2,7 @@
 
 import { useState, useEffect, useRef } from 'react';
 import { useSession } from 'next-auth/react';
-import { Bell, X, Check, Package, CheckCircle, XCircle, Info, ArrowRight } from 'lucide-react';
+import { Bell, BellRing, X, Check, Package, CheckCircle, XCircle, Info, ArrowRight } from 'lucide-react';
 
 interface Notificacion {
   id: number;
@@ -37,38 +37,43 @@ export default function NotificationsBell({ onOpenRecepciones }: Props) {
     return () => document.removeEventListener('mousedown', handleClickOutside);
   }, []);
 
-  // Registrar Service Worker y suscribirse a push
+  const [pushActivo, setPushActivo] = useState<boolean | null>(null); // null=no soportado, true=activo, false=inactivo
+
+  // Registrar SW al cargar (sin pedir permiso aún)
   useEffect(() => {
     if (!session?.user || typeof window === 'undefined') return;
-    if (!('serviceWorker' in navigator) || !('PushManager' in window)) return;
+    if (!('serviceWorker' in navigator) || !('PushManager' in window)) { setPushActivo(null); return; }
 
-    const registerPush = async () => {
-      try {
-        const reg = await navigator.serviceWorker.register('/sw.js');
-        const permission = await Notification.requestPermission();
-        if (permission !== 'granted') return;
-
-        const existing = await reg.pushManager.getSubscription();
-        if (existing) return; // ya suscrito
-
-        const res = await fetch('/api/push');
-        const { publicKey } = await res.json();
-
-        const sub = await reg.pushManager.subscribe({
-          userVisibleOnly: true,
-          applicationServerKey: publicKey,
-        });
-
-        await fetch('/api/push', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify(sub.toJSON()),
-        });
-      } catch { }
-    };
-
-    registerPush();
+    navigator.serviceWorker.register('/sw.js').then(async (reg) => {
+      const existing = await reg.pushManager.getSubscription();
+      setPushActivo(!!existing);
+    }).catch(() => setPushActivo(null));
   }, [session]);
+
+  const activarPush = async () => {
+    if (!('serviceWorker' in navigator) || !('PushManager' in window)) return;
+    try {
+      const reg = await navigator.serviceWorker.ready;
+      const permission = await Notification.requestPermission();
+      if (permission !== 'granted') return;
+
+      const existing = await reg.pushManager.getSubscription();
+      if (existing) { setPushActivo(true); return; }
+
+      const res = await fetch('/api/push');
+      const { publicKey } = await res.json();
+      const sub = await reg.pushManager.subscribe({
+        userVisibleOnly: true,
+        applicationServerKey: publicKey,
+      });
+      await fetch('/api/push', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(sub.toJSON()),
+      });
+      setPushActivo(true);
+    } catch { }
+  };
 
   const fetchNotificaciones = async () => {
     if (!session?.user) return;
@@ -302,14 +307,29 @@ export default function NotificationsBell({ onOpenRecepciones }: Props) {
               })()}
             </div>
 
-            {/* Footer: Ver todas / Ver solo no leídas */}
-            <div className="border-t border-border/50 px-4 py-2.5 flex-shrink-0">
+            {/* Footer */}
+            <div className="border-t border-border/50 px-4 py-2.5 flex-shrink-0 space-y-1.5">
               <button
                 onClick={() => setVerTodas(v => !v)}
                 className="w-full text-xs text-center text-blue-600 hover:text-blue-700 font-medium py-1 rounded-lg hover:bg-blue-50 transition-colors"
               >
                 {verTodas ? 'Ver solo no leídas' : `Ver todas (${notificaciones.length})`}
               </button>
+              {pushActivo === false && (
+                <button
+                  onClick={activarPush}
+                  className="w-full flex items-center justify-center gap-1.5 text-xs font-medium py-1.5 rounded-lg bg-blue-50 text-blue-700 hover:bg-blue-100 transition-colors"
+                >
+                  <BellRing className="w-3.5 h-3.5" />
+                  Activar notificaciones en este dispositivo
+                </button>
+              )}
+              {pushActivo === true && (
+                <p className="text-center text-[10px] text-emerald-600 font-medium py-0.5">
+                  <CheckCircle className="inline w-3 h-3 mr-1" />
+                  Notificaciones activas en este dispositivo
+                </p>
+              )}
             </div>
           </div>
         </>
