@@ -11,16 +11,20 @@ export async function GET(request: NextRequest) {
     const almacenId = searchParams.get('almacenId');
     const almacenesParam = searchParams.get('almacenes'); // "1,3,5" para encargado multi
 
+    const todos = searchParams.get('todos') === 'true'; // admin: sin filtro
+
     // Construir lista de almacenes a filtrar
     let almacenIds: number[] = [];
-    if (almacenesParam) {
-      almacenIds = almacenesParam.split(',').map(Number).filter(Boolean);
-    } else if (almacenId) {
-      almacenIds = [parseInt(almacenId)];
-    }
+    if (!todos) {
+      if (almacenesParam) {
+        almacenIds = almacenesParam.split(',').map(Number).filter(Boolean);
+      } else if (almacenId) {
+        almacenIds = [parseInt(almacenId)];
+      }
 
-    if (almacenIds.length === 0) {
-      return NextResponse.json({ error: 'almacenId o almacenes es requerido' }, { status: 400 });
+      if (almacenIds.length === 0) {
+        return NextResponse.json({ error: 'almacenId o almacenes es requerido' }, { status: 400 });
+      }
     }
 
     // ─── 1. Un solo query para todos los movimientos ───────────────────────────
@@ -41,13 +45,13 @@ export async function GET(request: NextRequest) {
         transportadoPor: movimientos.transportadoPor,
       })
       .from(movimientos)
-      .where(or(
+      .where(todos ? undefined : or(
         inArray(movimientos.almacenOrigenId, almacenIds),
         inArray(movimientos.almacenDestinoId, almacenIds),
       ))
       .orderBy(desc(movimientos.fechaSolicitud));
 
-    // Set de almacenIds para calcular tipo por movimiento
+    // Set de almacenIds para calcular tipo por movimiento (vacío si admin ve todo)
     const almacenIdsSet = new Set(almacenIds);
 
 
@@ -108,7 +112,8 @@ export async function GET(request: NextRequest) {
       let tipo: string;
       if (mov.tipoMovimiento === 'entrada') tipo = 'ajuste_entrada';
       else if (mov.tipoMovimiento === 'baja') tipo = 'ajuste_baja';
-      // Para multi-almacén: si el destino es uno de los almacenes del encargado → entrada
+      // Para admin (sin filtro): mostrar siempre como transferencia; para otros: perspectiva del almacén
+      else if (todos) tipo = 'salida'; // desde perspectiva del origen
       else tipo = (mov.almacenDestinoId && almacenIdsSet.has(mov.almacenDestinoId)) ? 'entrada' : 'salida';
 
       const detalles = (detallesMap.get(mov.id) ?? []).map(d => ({

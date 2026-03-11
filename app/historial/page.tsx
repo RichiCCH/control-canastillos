@@ -69,6 +69,10 @@ export default function HistorialPage() {
   const isEncargado = rol === 'encargado';
   const isAdmin = rol === 'admin';
 
+  // Lista de almacenes para el filtro (admin: todos del sistema, encargado: los suyos)
+  const [todosAlmacenes, setTodosAlmacenes] = useState<{ id: number; nombre: string; esPrincipal: boolean }[]>([]);
+  const almacenesParaFiltro = isAdmin ? todosAlmacenes : almacenesUsuario;
+
   // ── Filtros ──
   const [fEstado, setFEstado] = useState('todos');
   const [fTipo, setFTipo] = useState('todos');
@@ -91,7 +95,21 @@ export default function HistorialPage() {
 
     const aid = (session.user as any).almacenId;
 
-    if (isEncargado && almacenesUsuario.length > 0) {
+    if (isAdmin) {
+      // Admin: cargar todos los almacenes para el filtro y todo el historial
+      Promise.all([
+        fetch('/api/almacenes').then(r => r.json()),
+        fetch('/api/historial?todos=true').then(r => r.json()),
+      ])
+        .then(([alms, data]) => {
+          if (Array.isArray(alms)) {
+            setTodosAlmacenes(alms.map((a: { id: number; nombre: string }) => ({ id: a.id, nombre: a.nombre, esPrincipal: false })));
+          }
+          setMovimientos(Array.isArray(data) ? data : []);
+        })
+        .catch(() => { })
+        .finally(() => setLoading(false));
+    } else if (isEncargado && almacenesUsuario.length > 0) {
       // Encargado: pide historial de TODOS sus almacenes asignados
       const ids = almacenesUsuario.map(a => a.id).join(',');
       fetch(`/api/historial?almacenes=${ids}`)
@@ -252,6 +270,11 @@ export default function HistorialPage() {
             <div>
               <h1 className="text-2xl font-bold lg:text-3xl text-gray-900">Historial de Movimientos</h1>
               <p className="text-sm mt-1 text-muted-foreground">
+                {isAdmin && (
+                  <span className="text-purple-600 font-semibold mr-2">
+                    🏢 Todos los almacenes ·
+                  </span>
+                )}
                 {isEncargado && almacenesUsuario.length > 1 && (
                   <span className="text-purple-600 font-semibold mr-2">
                     🏢 {almacenesUsuario.length} almacenes ·
@@ -320,12 +343,12 @@ export default function HistorialPage() {
               </div>
 
               <div className="grid grid-cols-2 sm:grid-cols-5 gap-3">
-                {/* Filtro Almacén: para encargado con múltiples almacenes */}
-                {isEncargado && almacenesUsuario.length > 1 && (
+                {/* Filtro Almacén: para encargado con múltiples almacenes o admin */}
+                {(isAdmin || (isEncargado && almacenesUsuario.length > 1)) && almacenesParaFiltro.length > 1 && (
                   <div className="col-span-2 sm:col-span-1">
                     <label className="field-label flex items-center gap-1"><Warehouse className="w-3 h-3" /> Almacén</label>
                     <AlmacenMultiSelect
-                      almacenes={almacenesUsuario}
+                      almacenes={almacenesParaFiltro}
                       selected={fAlmacen}
                       onChange={(ids) => { setFAlmacen(ids); setPage(1); }}
                       placeholder="Todos los almacenes"
@@ -403,8 +426,8 @@ export default function HistorialPage() {
                             Estado <SortIcon field="estado" />
                           </button>
                         </th>
-                        {/* Columna Almacén visible para encargado */}
-                        {isEncargado && (
+                        {/* Columna Almacén visible para encargado y admin */}
+                        {(isEncargado || isAdmin) && (
                           <th className="text-left px-4 py-3 font-semibold text-purple-500 text-xs uppercase tracking-wide">
                             <button onClick={() => toggleSort('almacen')} className="flex items-center gap-1 hover:text-purple-700">
                               <Warehouse className="w-3 h-3" /> Almacén <SortIcon field="almacen" />
@@ -423,15 +446,14 @@ export default function HistorialPage() {
                       {paged.map((m) => {
                         const es = ESTADO_STYLE[m.estado] || { bg: '#f3f4f6', color: '#374151', label: m.estado };
                         const isExp = expanded === m.id;
-                        // Para encargado: determinar almacén focal y dirección
-                        const esOrigenDelEncargado = isEncargado && almacenesUsuario.some(a => a.id === m.almacenOrigen?.id);
-                        const esDestinoDelEncargado = isEncargado && almacenesUsuario.some(a => a.id === m.almacenDestino?.id);
-                        const almacenFocal = isEncargado
+                        // Para encargado/admin: determinar almacén focal y dirección
+                        const esOrigenDelEncargado = (isEncargado || isAdmin) && almacenesParaFiltro.some(a => a.id === m.almacenOrigen?.id);
+                        const esDestinoDelEncargado = (isEncargado || isAdmin) && almacenesParaFiltro.some(a => a.id === m.almacenDestino?.id);
+                        const almacenFocal = (isEncargado || isAdmin)
                           ? (esOrigenDelEncargado ? m.almacenOrigen : m.almacenDestino)
                           : null;
-                        // dirección desde perspectiva del encargado
                         const dirEncargado = esOrigenDelEncargado && esDestinoDelEncargado
-                          ? 'interno' // movimiento entre dos almacenes propios
+                          ? 'interno'
                           : esOrigenDelEncargado ? 'salida' : 'entrada';
 
                         return (
@@ -449,8 +471,8 @@ export default function HistorialPage() {
                                   {es.label}
                                 </span>
                               </td>
-                              {/* Columna Almacén para encargado */}
-                              {isEncargado && (
+                              {/* Columna Almacén para encargado/admin */}
+                              {(isEncargado || isAdmin) && (
                                 <td className="px-4 py-3">
                                   <div className="flex flex-col gap-0.5">
                                     <span className="text-xs font-semibold text-gray-700">{almacenFocal?.nombre || '—'}</span>
@@ -501,7 +523,7 @@ export default function HistorialPage() {
                             {/* Fila expandida */}
                             {isExp && (
                               <tr key={`exp-${m.id}`} className="bg-blue-50/20">
-                                <td colSpan={isEncargado ? 8 : 7} className="px-6 py-3 border-b border-blue-100">
+                                <td colSpan={(isEncargado || isAdmin) ? 8 : 7} className="px-6 py-3 border-b border-blue-100">
                                   <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                                     <div>
                                       <p className="text-[10px] font-semibold uppercase text-gray-400 mb-2">Productos</p>
@@ -538,9 +560,9 @@ export default function HistorialPage() {
                   {paged.map(m => {
                     const es = ESTADO_STYLE[m.estado] || { bg: '#f3f4f6', color: '#374151', label: m.estado };
                     const isExp = expanded === m.id;
-                    const esOrigenMob = isEncargado && almacenesUsuario.some(a => a.id === m.almacenOrigen?.id);
-                    const esDestinoMob = isEncargado && almacenesUsuario.some(a => a.id === m.almacenDestino?.id);
-                    const almacenFocal = isEncargado ? (esOrigenMob ? m.almacenOrigen : m.almacenDestino) : null;
+                    const esOrigenMob = (isEncargado || isAdmin) && almacenesParaFiltro.some(a => a.id === m.almacenOrigen?.id);
+                    const esDestinoMob = (isEncargado || isAdmin) && almacenesParaFiltro.some(a => a.id === m.almacenDestino?.id);
+                    const almacenFocal = (isEncargado || isAdmin) ? (esOrigenMob ? m.almacenOrigen : m.almacenDestino) : null;
                     const dirMob = esOrigenMob && esDestinoMob ? 'interno' : esOrigenMob ? 'salida' : 'entrada';
                     return (
                       <div key={m.id} className={`p-4 ${isExp ? 'bg-blue-50/20' : ''}`} onClick={() => setExpanded(isExp ? null : m.id)}>
@@ -548,7 +570,7 @@ export default function HistorialPage() {
                           <div className="flex items-center gap-2 flex-wrap">
                             <span className="text-xs font-bold text-blue-700 bg-blue-100 px-1.5 py-0.5 rounded">#{m.id}</span>
                             <span className="text-[10px] font-bold px-2 py-0.5 rounded-full" style={{ background: es.bg, color: es.color }}>{es.label}</span>
-                            {isEncargado && almacenFocal && (
+                            {(isEncargado || isAdmin) && almacenFocal && (
                               <span className={`text-[10px] font-semibold px-2 py-0.5 rounded-full border ${
                                 dirMob === 'salida' ? 'bg-orange-50 text-orange-600 border-orange-200'
                                 : dirMob === 'entrada' ? 'bg-emerald-50 text-emerald-600 border-emerald-200'

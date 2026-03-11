@@ -48,7 +48,21 @@ export default function RecepcionesPage() {
     const almacenId = (session.user as any).almacenId;
     const almacenesUsuario: { id: number }[] = (session.user as any).almacenes || [];
 
-    if (rol === 'encargado' && almacenesUsuario.length > 0) {
+    if (rol === 'admin') {
+      // Admin: cargar todos los almacenes y pedir movimientos de todos
+      fetch('/api/almacenes')
+        .then(r => r.json())
+        .then((alms: { id: number; nombre: string }[]) => {
+          setAlmacenes(Array.isArray(alms) ? alms : []);
+          if (!Array.isArray(alms) || alms.length === 0) { setLoading(false); return; }
+          const ids = alms.map(a => a.id).join(',');
+          return fetch(`/api/movimientos?almacenesDestinoIds=${ids}`)
+            .then(r => r.json())
+            .then(data => setMovimientos(Array.isArray(data) ? data : []));
+        })
+        .catch(() => setMessage({ type: 'error', text: 'Error al cargar movimientos' }))
+        .finally(() => setLoading(false));
+    } else if (rol === 'encargado' && almacenesUsuario.length > 0) {
       // Encargado: una sola llamada con todos sus almacenes
       const ids = almacenesUsuario.map((a: { id: number }) => a.id).join(',');
       fetch(`/api/movimientos?almacenesDestinoIds=${ids}`)
@@ -77,7 +91,13 @@ export default function RecepcionesPage() {
     const almacenesUsuario: { id: number }[] = (session?.user as any)?.almacenes || [];
     const almacenId = (session?.user as any)?.almacenId;
 
-    if (rol === 'encargado' && almacenesUsuario.length > 0) {
+    if (rol === 'admin') {
+      const ids = almacenes.map(a => a.id).join(',');
+      if (!ids) return;
+      fetch(`/api/movimientos?almacenesDestinoIds=${ids}`)
+        .then(r => r.json())
+        .then(data => setMovimientos(Array.isArray(data) ? data : []));
+    } else if (rol === 'encargado' && almacenesUsuario.length > 0) {
       const ids = almacenesUsuario.map((a: { id: number }) => a.id).join(',');
       fetch(`/api/movimientos?almacenesDestinoIds=${ids}`)
         .then(r => r.json())
