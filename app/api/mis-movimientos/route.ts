@@ -6,6 +6,7 @@ import { eq, inArray } from 'drizzle-orm';
 export const dynamic = 'force-dynamic';
 
 const almacenesDestino = almacenes;
+const almacenesOrigen = almacenes;
 const usersAprobador = users;
 
 export async function GET(request: NextRequest) {
@@ -30,6 +31,7 @@ export async function GET(request: NextRequest) {
         fechaAprobacion: movimientos.fechaAprobacion,
         almacenDestinoId: almacenesDestino.id,
         almacenDestinoNombre: almacenesDestino.nombre,
+        almacenOrigenId: movimientos.almacenOrigenId,
         aprobadorId: usersAprobador.id,
         aprobadorNombre: usersAprobador.nombre,
       })
@@ -73,6 +75,7 @@ export async function GET(request: NextRequest) {
       fechaSolicitud: mov.fechaSolicitud,
       fechaAprobacion: mov.fechaAprobacion,
       almacenDestino: mov.almacenDestinoId ? { id: mov.almacenDestinoId, nombre: mov.almacenDestinoNombre! } : null,
+      almacenOrigenId: mov.almacenOrigenId,
       usuarioAprobador: mov.aprobadorId ? { id: mov.aprobadorId, nombre: mov.aprobadorNombre! } : null,
       detalles: (detallesPorMov.get(mov.id) || []).map(d => ({
         id: d.id,

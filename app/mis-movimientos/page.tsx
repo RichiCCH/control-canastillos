@@ -15,6 +15,7 @@ interface Movimiento {
   id: number; estado: string; observaciones: string | null; transportadoPor: string | null;
   fechaSolicitud: string; fechaAprobacion: string | null;
   almacenDestino: { id: number; nombre: string } | null;
+  almacenOrigenId?: number | null;
   usuarioAprobador: { id: number; nombre: string } | null;
   detalles: Array<{ id: number; cantidad: number; producto: { id: number; codigo: string; nombre: string; tipo: string; unidadMedida: string } }>;
 }
