@@ -99,9 +99,14 @@ export default function ModalSalida({ open, onClose, onSuccess }: ModalSalidaPro
     if (!userAlmacenId) return;
     fetch(`/api/inventario?almacenId=${userAlmacenId}&productoId=${productoActual}`)
       .then(r => r.json())
-      .then(data => setStockDisponible(data.length > 0 ? data[0].cantidad : 0))
+      .then(data => {
+        const cantidadInventario = data.length > 0 ? data[0].cantidad : 0;
+        // Descontar lo que ya está agregado al movimiento actual
+        const yaAgregado = productosSeleccionados.find(p => p.productoId === parseInt(productoActual))?.cantidad ?? 0;
+        setStockDisponible(Math.max(0, cantidadInventario - yaAgregado));
+      })
       .catch(() => setStockDisponible(null));
-  }, [productoActual, session]);
+  }, [productoActual, session, productosSeleccionados]);
 
   const fetchAlmacenes = async () => {
     try { const r = await fetch('/api/almacenes'); setAlmacenes(await r.json()); } catch { }
